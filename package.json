@@ -1,0 +1,56 @@
+{
+  "name": "planner-independent",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "vinext dev --hostname 127.0.0.1 --port 5174",
+    "build": "vinext build",
+    "start": "wrangler dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --port 5174",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:local": "wrangler d1 migrations apply DB --local --persist-to .wrangler/state",
+    "deploy": "node scripts/deploy.mjs",
+    "desktop:build": "node desktop/build.mjs",
+    "desktop:dev": "npm run desktop:build && electron .",
+    "desktop:pack": "npm run desktop:build && electron-builder --mac --dir --publish never",
+    "desktop:dist": "npm run desktop:build && electron-builder --mac dmg zip --publish never",
+    "test:desktop": "npm run desktop:build && node --test tests/desktop-store.test.mjs tests/desktop-security.test.mjs tests/desktop-assistant.test.mjs",
+    "release:prepare": "node desktop/prepare-release.mjs"
+  },
+  "dependencies": {
+    "@better-auth/drizzle-adapter": "1.7.25",
+    "better-auth": "1.7.25",
+    "drizzle-orm": "0.45.2",
+    "lucide-react": "^1.31.0",
+    "motion": "14.14.0",
+    "next": "16.3.4",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.37.1",
+    "@cloudflare/workers-types": "4.20260515.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "@vitejs/plugin-rsc": "0.5.26",
+    "drizzle-kit": "0.31.10",
+    "electron": "45.3.3",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2",
+    "node-api-headers": "1.9.0",
+    "typescript": "5.9.3",
+    "vinext": "1.0.0-beta.5",
+    "vite": "8.0.13",
+    "wrangler": "4.92.0"
+  },
+  "description": "Личный планер для Mac и браузера",
+  "main": "desktop/main.cjs",
+  "author": "Planner contributors"
+}

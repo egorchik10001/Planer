@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import {makeTask} from '../lib/planner.ts';
+const origin='http://127.0.0.1:5173';
+const login=await fetch(origin+'/signin-with-chatgpt?return_to=/',{redirect:'manual'});
+const cookie=login.headers.getSetCookie().map(s=>s.split(';')[0]).join('; ');
+assert.ok(cookie,'Local preview sign-in cookie');
+async function request(path,body){const r=await fetch(origin+path,{method:body?'POST':'GET',headers:{Cookie:cookie,...(body?{'Content-Type':'application/json',Origin:origin}:{})},body:body?JSON.stringify(body):undefined});return{status:r.status,body:await r.json()};}
+const noauth=await fetch(origin+'/api/sync');assert.equal(noauth.status,401);console.log('PASS authentication required');
+let initial=await request('/api/sync');assert.equal(initial.status,200);assert.equal(initial.body.entities.filter(x=>x.kind==='project').length>=3,true);
+const task=makeTask('[проверка] конкурентное сохранение',{projectId:'personal'});
+const op={opId:crypto.randomUUID(),id:task.id,kind:'task',changes:task,before:{},baseVersion:0,source:'manual'};
+const post=operations=>request('/api/sync',{operations});
+let r=await post([op]);assert.deepEqual(r.body.accepted,[op.opId]);const first=r.body.entities.find(x=>x.id===task.id);assert.equal(first.version,1);
+r=await post([op]);assert.equal(r.body.entities.find(x=>x.id===task.id).version,1);let h=await request('/api/history?id='+task.id);assert.equal(h.body.history.length,1);console.log('PASS retry does not duplicate record or history');
+const titleOp={...op,opId:crypto.randomUUID(),baseVersion:1,changes:{title:'[проверка] новая версия'},before:{title:task.title}};
+r=await post([titleOp]);assert.equal(r.body.conflicts.length,0);
+const noteOp={...op,opId:crypto.randomUUID(),baseVersion:1,changes:{notes:'независимая правка'},before:{notes:''}};
+r=await post([noteOp]);assert.equal(r.body.conflicts.length,0);assert.equal(r.body.entities.find(x=>x.id===task.id).data.title,'[проверка] новая версия');console.log('PASS independent concurrent fields merge');
+const stale={...titleOp,opId:crypto.randomUUID(),changes:{title:'не должна стереть новую версию'}};
+r=await post([stale]);assert.equal(r.body.conflicts.length,1);assert.equal(r.body.entities.find(x=>x.id===task.id).data.title,'[проверка] новая версия');console.log('PASS overlapping changes produce a conflict');
+let current=r.body.entities.find(x=>x.id===task.id);
+const newer={...titleOp,opId:crypto.randomUUID(),baseVersion:current.version,before:{title:current.data.title},changes:{title:'[проверка] самая новая'}};
+await post([newer]);r=await request('/api/history',{id:task.id,historyId:titleOp.opId});assert.equal(r.status,409);console.log('PASS history refuses to erase a later edit');
+r=await request('/api/history',{id:task.id,historyId:noteOp.opId});assert.equal(r.body.accepted,true);r=await request('/api/sync');current=r.body.entities.find(x=>x.id===task.id);assert.equal(current.data.notes,'');assert.equal(current.data.title,'[проверка] самая новая');console.log('PASS restore changes only the recorded fields');
+r=await post([{...op,opId:crypto.randomUUID(),baseVersion:current.version,before:{deletedAt:null},changes:{deletedAt:new Date().toISOString()}}]);assert.equal(r.body.conflicts.length,0);console.log('PASS recoverable delete');
+const foreign=await fetch(origin+'/api/sync',{method:'POST',headers:{Cookie:cookie,Origin:'https://unrelated.example','Content-Type':'application/json'},body:JSON.stringify({operations:[]})});assert.equal(foreign.status,403);console.log('PASS foreign-origin writes rejected');
+
+const badTask=makeTask('[проверка] удалённый проект',{projectId:'removed-project'});
+const goodTask=makeTask('[проверка] независимое сохранение',{projectId:'home'});
+const makeOp=t=>({...op,opId:crypto.randomUUID(),id:t.id,changes:t,baseVersion:0,before:{}});
+const badOp=makeOp(badTask),goodOp=makeOp(goodTask);
+r=await post([badOp,goodOp]);assert.equal(r.status,200);assert.equal(r.body.rejected.length,1);assert.equal(r.body.accepted.includes(goodOp.opId),true);console.log('PASS rejected operation does not block independent writes');
+current=r.body.entities.find(x=>x.id===goodTask.id);await post([{...makeOp(goodTask),baseVersion:current.version,before:{deletedAt:null},changes:{deletedAt:new Date().toISOString()}}]);

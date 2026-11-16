@@ -1,0 +1,1 @@
+export function apiPath(path:string,spaceId:string|null,userId:string){const url=new URL(path,'https://planner.local');if(spaceId)url.searchParams.set('space',spaceId);url.searchParams.set('user',userId);return url.pathname+url.search;}

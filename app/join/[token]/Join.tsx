@@ -1,0 +1,4 @@
+'use client';
+import {apiPath} from '../../../lib/api-path';
+import {useState} from 'react';
+export default function Join({token,userId}:{token:string;userId:string}){const [busy,setBusy]=useState(false),[error,setError]=useState('');return <><button className="button primary" disabled={busy} onClick={async()=>{setBusy(true);try{const r=await fetch(apiPath('/api/invitations',null,userId),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});const d:any=await r.json();if(!r.ok)throw new Error(d.error);location.assign('/?space='+encodeURIComponent(d.spaceId));}catch(e){setError(e instanceof Error?e.message:'Не удалось присоединиться.');setBusy(false);}}}>{busy?'Присоединяюсь…':'Присоединиться к пространству'}</button>{error&&<p className="error-message" role="alert">{error}</p>}</>;}

@@ -1,0 +1,5 @@
+import { getPlannerContext } from '../../auth';
+import { taskHistory,restoreChange } from '../../../lib/store';
+export const dynamic='force-dynamic';
+export async function GET(request:Request){const u=await getPlannerContext(request);if(!u)return Response.json({error:'Войдите в аккаунт.'},{status:401});const id=new URL(request.url).searchParams.get('id');if(!id)return Response.json({error:'Нужна задача.'},{status:400});return Response.json({history:await taskHistory(u.userId,id)},{headers:{'Cache-Control':'no-store'}});}
+export async function POST(request:Request){const u=await getPlannerContext(request);if(!u)return Response.json({error:'Войдите в аккаунт.'},{status:401});if(request.headers.get('origin') && request.headers.get('origin')!==new URL(request.url).origin)return new Response(null,{status:403});try{const b:any=await request.json();return Response.json(await restoreChange(u.userId,b.id,b.historyId));}catch(e){return Response.json({error:e instanceof Error?e.message:'Не удалось восстановить.'},{status:409});}}

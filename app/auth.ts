@@ -1,0 +1,6 @@
+import {headers} from 'next/headers';
+import {getAuth} from '../lib/auth';
+import {env} from 'cloudflare:workers';
+export async function getUser(request?:Request){const session=await getAuth().api.getSession({headers:await headers()});if(!session)return null;if(request){const expected=request.headers.get('X-Planner-User')||new URL(request.url).searchParams.get('user');if(expected!==session.user.id)return null;}return{userId:session.user.id,email:session.user.email,name:session.user.name};}
+export async function getPlannerContext(request?:Request){const user=await getUser(request&&new URL(request.url).pathname.startsWith('/api/')?request:undefined);if(!user)return null;const spaceId=request?new URL(request.url).searchParams.get('space'):null;if(!spaceId)return{...user,actorId:user.userId,spaceId:null,role:'owner' as const};const member=await env.DB!.prepare('SELECT role FROM planner_members WHERE space_id=? AND user_id=?').bind(spaceId,user.userId).first<{role:'owner'|'member'}>();if(!member)return null;return{...user,userId:'space:'+spaceId,actorId:user.userId,spaceId,role:member.role};}
+export function sameOrigin(request:Request){return !request.headers.get('origin')||request.headers.get('origin')===new URL(request.url).origin;}

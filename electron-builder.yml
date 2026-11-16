@@ -1,0 +1,52 @@
+appId: app.planner.personal
+productName: Планер
+artifactName: "Planner-${version}-mac-${arch}.${ext}"
+directories:
+  output: release
+files:
+  - desktop/main.cjs
+  - desktop/preload.cjs
+  - desktop/security.cjs
+  - desktop/smoke.cjs
+  - desktop/update-config.json
+  - desktop-dist/**
+  - package.json
+  - "!node_modules/**"
+  - "!desktop-dist/renderer/sw.js"
+  - "!desktop-dist/renderer/manifest.webmanifest"
+extraResources:
+  - from: desktop-native/planner-native.node
+    to: planner-native.node
+extraFiles:
+  - from: desktop-native/vendor/Sparkle.framework
+    to: Frameworks/Sparkle.framework
+afterPack: desktop/after-pack.cjs
+asar: true
+npmRebuild: false
+mac:
+  category: public.app-category.productivity
+  icon: desktop/assets/icon.icns
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  minimumSystemVersion: "12.0.0"
+  identity: "-"
+  notarize: false
+  entitlements: desktop/entitlements.mac.plist
+  entitlementsInherit: desktop/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: Запись голосовых заметок о делах в Планере.
+    NSCameraUsageDescription: Камера в Планере не используется.
+dmg:
+  title: Планер
+  sign: false
+  contents:
+    - x: 145
+      y: 180
+    - x: 415
+      y: 180
+      type: link
+      path: /Applications
+publish: null
