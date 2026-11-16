@@ -3,7 +3,7 @@ const {readFileSync,writeFileSync,mkdirSync,existsSync,renameSync}=require('node
 const path=require('node:path');
 const {localURL,serverOrigin,assetPath,externalURL}=require('./security.cjs');
 const {LocalStore}=require('../desktop-dist/local-store.cjs');
-const {desktopAssistant}=require('../desktop-dist/assistant.cjs');
+const {LocalVoice}=require('../desktop-dist/local-voice.cjs');
 const updateConfig=require('./update-config.json');
 const testMode=process.argv.includes('--planner-smoke');
 if(testMode){const dir=process.env.PLANNER_SMOKE_DIRECTORY;if(!dir||!path.isAbsolute(dir))throw new Error('Smoke test needs its own absolute data directory.');app.setPath('userData',dir);}
@@ -11,8 +11,7 @@ app.setName('Планер');
 protocol.registerSchemesAsPrivileged([{scheme:'planner',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true,stream:true}}]);
 let window=null,localStore=null,quitting=false,config={url:null,mode:'local'};
 const localWindows=new Set();
-let nativeBridge=null,voiceEnabled=false;
-const voiceKey=()=>testMode?'':nativeBridge?.getKey()||'';
+let nativeBridge=null,localVoice=null;
 function updateFeed(){return 'https://github.com/'+updateConfig.repository+'/releases/latest/download/appcast-'+process.arch+'.xml';}
 function checkUpdates(){if(!app.isPackaged){void dialog.showMessageBox({message:'Обновления доступны в установленной версии приложения.'});return;}try{nativeBridge.checkUpdates();}catch(error){void dialog.showMessageBox({type:'warning',message:'Не удалось проверить обновления',detail:error.message});}}
 const renderer=path.join(__dirname,'../desktop-dist/renderer');
@@ -22,7 +21,22 @@ function saveConfig(next){const file=configFile();writeFileSync(file+'.tmp',JSON
 function trusted(event){return localWindows.has(event.sender.id)&&event.senderFrame===event.sender.mainFrame&&localURL(event.senderFrame.url);}
 function requireLocal(event){if(!trusted(event))throw new Error('Этот вызов доступен только локальному планеру.');}
 function command(name){if(window&&!window.isDestroyed())void window.webContents.executeJavaScript('window.dispatchEvent(new Event('+JSON.stringify('planner:'+name)+'))').catch(()=>{});}
-function openLocal(connection=false){saveConfig({...config,mode:'local'});createWindow('local',connection);}
+function openLocal(connection=false){
+ if(!connection)saveConfig({...config,mode:'local'});
+ const url='planner://app/'+(connection?'connection'+(connection==='voice'?'#voice':''):'');
+ if(window&&!window.isDestroyed()&&localWindows.has(window.webContents.id)){
+  if(window.webContents.getURL()!==url)void window.webContents.loadURL(url).catch(()=>{});
+  window.show();window.focus();return;
+ }
+ createWindow('local',connection);
+}
+async function goBack(){
+ if(!window||window.isDestroyed())return;
+ if(localWindows.has(window.webContents.id)&&await window.webContents.executeJavaScript("(()=>{const d=document.querySelector('dialog[open]');if(!d)return false;d.dispatchEvent(new Event('cancel',{cancelable:true}));return true;})()").catch(()=>false))return;
+ const history=window.webContents.navigationHistory;
+ if(history.canGoBack()){history.goBack();return;}
+ if(config.mode==='server'&&config.url)createWindow('server');else openLocal();
+}
 function menu(){Menu.setApplicationMenu(Menu.buildFromTemplate([
  {label:'Планер',submenu:[{role:'about',label:'О Планере'},{label:'Проверить обновления…',click:checkUpdates},{type:'separator'},{label:'Настройки приложения…',accelerator:'CmdOrCtrl+,',click:()=>openLocal(true)},{label:'Открыть локальный план',click:()=>openLocal()},{label:'Открыть подключённый сервер',enabled:!!config.url,click:()=>{saveConfig({...config,mode:'server'});createWindow('server');}},{type:'separator'},{label:'Показать папку данных',click:()=>shell.openPath(path.join(app.getPath('userData'),'plan'))},{type:'separator'},{role:'hide',label:'Скрыть Планер'},{role:'hideOthers',label:'Скрыть остальные'},{role:'unhide',label:'Показать все'},{type:'separator'},{role:'quit',label:'Завершить Планер'}]},
  {label:'Файл',submenu:[{label:'Новое дело',accelerator:'CmdOrCtrl+N',click:()=>command('new-task')},{label:'Поиск',accelerator:'CmdOrCtrl+K',click:()=>command('search')},{type:'separator'},{role:'close',label:'Закрыть окно'}]},
@@ -32,7 +46,7 @@ function menu(){Menu.setApplicationMenu(Menu.buildFromTemplate([
  ]));}
 function createWindow(mode='local',connection=false){
  const old=window,isLocal=mode!=='server';
- const win=new BrowserWindow({width:1440,height:940,minWidth:760,minHeight:600,title:'Планер',backgroundColor:'#e9ebdf',show:false,webPreferences:{...(isLocal?{preload:path.join(__dirname,'preload.cjs')}:{ }),partition:isLocal?'persist:planner-local':'persist:planner-server',nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,allowRunningInsecureContent:false}});
+ const win=new BrowserWindow({width:1440,height:940,minWidth:540,minHeight:420,title:'Планер',backgroundColor:'#e9ebdf',show:false,webPreferences:{...(isLocal?{preload:path.join(__dirname,'preload.cjs')}:{ }),partition:isLocal?'persist:planner-local':'persist:planner-server',nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,allowRunningInsecureContent:false}});
  window=win;const contentsId=win.webContents.id;if(isLocal)localWindows.add(contentsId);
  const initial=isLocal?'planner://app/'+(connection?'connection'+(connection==='voice'?'#voice':''):''):config.url;
  const allowed=url=>isLocal?localURL(url):(()=>{try{return new URL(url).origin===config.url;}catch{return false;}})();
@@ -44,6 +58,9 @@ function createWindow(mode='local',connection=false){
  win.webContents.on('will-navigate',(event,url)=>{if(!allowed(url)){event.preventDefault();if(externalURL(url))void shell.openExternal(url);}});
  win.webContents.on('will-redirect',(event,url)=>{if(!allowed(url))event.preventDefault();});
  win.webContents.on('will-attach-webview',event=>event.preventDefault());
+ win.on('swipe',(_event,direction)=>{if(direction==='right')goBack();});
+ win.on('app-command',(_event,command)=>{if(command==='browser-backward')goBack();});
+ win.webContents.on('before-input-event',(event,input)=>{if((input.meta||input.control)&&input.type==='keyDown'&&(input.key==='['||input.code==='BracketLeft')){event.preventDefault();void goBack();}});
  win.webContents.on('did-fail-load',(_event,code,_description,_url,isMainFrame)=>{if(isMainFrame&&code!==-3&&!isLocal&&!testMode){win.show();void dialog.showMessageBox(win,{type:'warning',message:'Не удалось открыть сервер',detail:'Проверьте подключение к интернету и адрес сервера. Локальные задачи остаются на этом Mac.',buttons:['Открыть локальный план','Повторить'],defaultId:0,cancelId:0}).then(result=>{if(result.response===0)openLocal();else void win.loadURL(initial).catch(()=>{});});}});
  win.on('close',event=>{if(!quitting&&!testMode&&window===win){event.preventDefault();win.hide();}});
  win.on('closed',()=>localWindows.delete(contentsId));
@@ -70,14 +87,14 @@ function configurePermissions(partition){
 if(!testMode&&!app.requestSingleInstanceLock())app.quit();
 else{
  app.on('second-instance',()=>{if(window){window.show();window.focus();}});
- app.on('before-quit',()=>quitting=true);
+ app.on('before-quit',()=>{quitting=true;localVoice?.stop();});
  app.on('activate',()=>{if(window&&!window.isDestroyed())window.show();else if(localStore)createWindow(config.mode);});
  app.whenReady().then(async()=>{
   mkdirSync(app.getPath('userData'),{recursive:true,mode:0o700});
   try{if(existsSync(configFile())){const c=JSON.parse(readFileSync(configFile(),'utf8'));config={url:c.url?serverOrigin(c.url):null,mode:c.mode==='server'&&c.url?'server':'local'};}}catch{config={url:null,mode:'local'};}
   localStore=new LocalStore(path.join(app.getPath('userData'),'plan'));
   nativeBridge=require(app.isPackaged?path.join(process.resourcesPath,'planner-native.node'):path.join(__dirname,'../desktop-native/planner-native.node'));
-  try{voiceEnabled=!!voiceKey();}catch{voiceEnabled=false;}
+  localVoice=new LocalVoice(path.join(app.getPath('userData'),'voice'),app.isPackaged?path.join(process.resourcesPath,'engines'):path.join(__dirname,'../desktop-native/engines',process.arch));
   session.fromPartition('persist:planner-local').protocol.handle('planner',async request=>{
    if(!localURL(request.url))return new Response(null,{status:403});
    const url=new URL(request.url);
@@ -91,17 +108,19 @@ else{
   });
   ipcMain.handle('planner:request',async(event,request)=>{requireLocal(event);
    try{const url=new URL(request?.url,'planner://app');if(!localURL(url.href)||url.searchParams.get('user')!=='mac-local'||url.searchParams.has('space'))return{status:401,body:{error:'Неверный локальный аккаунт.'}};
-    if(url.pathname==='/api/integrations')return{status:200,body:{voice:voiceEnabled,telegram:false,backgroundReminders:false}};
-    if(url.pathname==='/api/assistant'&&request.method==='POST')return desktopAssistant(request,localStore.read().entities,voiceKey());
+    if(url.pathname==='/api/integrations')return{status:200,body:{voice:localVoice.models.ready(),telegram:false,backgroundReminders:false}};
+    if(url.pathname==='/api/assistant'&&request.method==='POST')return localVoice.handle(request,localStore.read().entities);
     return localStore.request(request);
    }catch{return{status:422,body:{error:'Не удалось обработать запрос. Проверьте настройки приложения.'}};}
   });
-  ipcMain.handle('planner:connection',event=>{requireLocal(event);return{url:config.url,version:app.getVersion(),voice:voiceEnabled,repository:updateConfig.repository,updates:app.isPackaged};});
+  ipcMain.handle('planner:connection',event=>{requireLocal(event);return{url:config.url,version:app.getVersion(),voice:localVoice.models.ready(),repository:updateConfig.repository,updates:app.isPackaged};});
   ipcMain.handle('planner:connect',(event,value)=>{requireLocal(event);try{const url=serverOrigin(value);saveConfig({url,mode:'server'});setImmediate(()=>createWindow('server'));return{};}catch(error){return{error:error.message};}});
   ipcMain.handle('planner:local',event=>{requireLocal(event);setImmediate(()=>openLocal());});
   ipcMain.handle('planner:open-connection',(event,section)=>{requireLocal(event);setImmediate(()=>openLocal(section==='voice'?'voice':true));});
-  ipcMain.handle('planner:voice-save',(event,key)=>{requireLocal(event);if(testMode)throw Error('Keychain changes disabled in tests');if(typeof key!=='string'||key.length<20||key.length>1024||!/^sk-[A-Za-z0-9_-]+$/.test(key.trim()))throw Error('Проверьте API-ключ OpenAI.');nativeBridge.setKey(key.trim());voiceEnabled=true;return{saved:true};});
-  ipcMain.handle('planner:voice-remove',event=>{requireLocal(event);if(testMode)throw Error('Keychain changes disabled in tests');nativeBridge.clearKey();voiceEnabled=false;return{removed:true};});
+  ipcMain.handle('planner:back',event=>{requireLocal(event);setImmediate(goBack);});
+  ipcMain.handle('planner:local-voice-status',event=>{requireLocal(event);return localVoice.models.status();});
+  ipcMain.handle('planner:local-voice-prepare',async event=>{requireLocal(event);if(testMode)throw Error('Model downloads disabled in UI tests');return localVoice.setup();});
+  ipcMain.handle('planner:local-voice-pause',event=>{requireLocal(event);localVoice.models.pause();});
   ipcMain.handle('planner:updates',event=>{requireLocal(event);checkUpdates();});
   configurePermissions('persist:planner-local');configurePermissions('persist:planner-server');
   app.setAboutPanelOptions({applicationName:'Планер',applicationVersion:app.getVersion(),copyright:'Личный планер · локальные данные и свой сервер'});

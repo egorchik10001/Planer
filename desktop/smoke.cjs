@@ -41,8 +41,26 @@ module.exports=async({app,win,localStore,createWindow})=>{
  await js("document.querySelector('.week-cards .card-main').click()");await until(()=>js("!!document.querySelector('.task-dialog[open]')"));
  await js("document.querySelector('.task-dialog .icon-button[aria-label=\"Закрыть\"]').click()");
  win.webContents.send('planner:command','new-task');await until(()=>js("document.body.innerText.includes('Новое дело')"));await js("document.querySelector('.task-dialog .icon-button[aria-label=\"Закрыть\"]').click()");
- await js("window.plannerDesktop.openConnection()");await delay(800);
- // Recreate after the connection transition to prove on-disk data survived a fresh renderer.
- const reopened=createWindow('local');await delay(1000);assert.ok(localStore.read().entities.some(e=>e.data.title===title));await reopened.webContents.executeJavaScript("[...document.querySelectorAll('.sidebar nav button')].find(b=>b.innerText.includes('\u0412\u0445\u043e\u0434\u044f\u0449\u0438\u0435')).click()");await delay(150);assert.ok((await reopened.webContents.executeJavaScript('document.body.innerText')).includes(title));
- clearTimeout(timeout);assert.deepEqual(errors,[]);console.log('Desktop smoke passed: offline save, restart, week layout, full-card pointer drag, Escape, editor, menu, sandbox.');
+ const windowId=win.id;
+ for(const [width,height] of [[760,600],[560,480]]){
+  win.setSize(width,height);await delay(150);
+  await js("[...document.querySelectorAll('button[aria-label=\"Настройки\"]')].find(b=>b.getBoundingClientRect().width>0).click()");
+  await until(()=>js("!!document.querySelector('.small-dialog[open] .dialog-back')"));
+  assert.ok(await js("(()=>{const r=document.querySelector('.dialog-back').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;})()"),'settings back visible in short window');
+  await js("document.querySelector('.dialog-back').click()");await until(()=>js("!document.querySelector('dialog[open]')"));
+  await js("window.plannerDesktop.openConnection()");await until(()=>js("!!document.querySelector('[data-app-back]')"));
+  assert.equal(win.id,windowId,'settings reuse the same native window');
+  assert.equal(await js("document.documentElement.scrollWidth<=innerWidth"),true,'small settings fit width');
+  assert.equal(await js("!!document.querySelector('input[type=password]')"),false,'no API key required');
+  await js("scrollTo(0,document.body.scrollHeight)");await delay(100);
+  assert.ok(await js("(()=>{const r=document.querySelector('[data-app-back]').getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;})()"),'back remains visible after scrolling');
+  await js("document.querySelector('[data-app-back]').click()");await until(()=>js("!!document.querySelector('.topbar')"));
+ }
+ await js("window.plannerDesktop.openConnection()");await until(()=>js("!!document.querySelector('[data-app-back]')"));
+ await js("window.dispatchEvent(new WheelEvent('wheel',{deltaX:-140,deltaY:0,bubbles:true,cancelable:true}))");await until(()=>js("!!document.querySelector('.topbar')"));
+ await js("window.plannerDesktop.openConnection()");await until(()=>js("!!document.querySelector('[data-app-back]')"));
+ win.webContents.sendInputEvent({type:'keyDown',keyCode:'[',modifiers:['meta']});win.webContents.sendInputEvent({type:'keyUp',keyCode:'[',modifiers:['meta']});await until(()=>js("!!document.querySelector('.topbar')"));
+ // Recreate to prove on-disk data survived a fresh window.
+ const reopened=createWindow('local');await delay(1000);assert.ok(localStore.read().entities.some(e=>e.data.title===title));await reopened.webContents.executeJavaScript("[...document.querySelectorAll('.mobile-tabs button')].find(b=>b.innerText.includes('\u0412\u0445\u043e\u0434\u044f\u0449\u0438\u0435'))?.click()");
+ clearTimeout(timeout);assert.deepEqual(errors,[]);console.log('Desktop smoke passed: offline save, restart, week layout, drag, Escape, sandbox, small-window settings, sticky back, wheel back and keyboard back.');
 };

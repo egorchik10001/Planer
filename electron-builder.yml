@@ -15,11 +15,15 @@ files:
   - "!desktop-dist/renderer/sw.js"
   - "!desktop-dist/renderer/manifest.webmanifest"
 extraResources:
+  - from: desktop-native/engines/${arch}
+    to: engines
+    filter: ["whisper-cli", "llama-completion"]
   - from: desktop-native/planner-native.node
     to: planner-native.node
 extraFiles:
   - from: desktop-native/vendor/Sparkle.framework
     to: Frameworks/Sparkle.framework
+beforePack: desktop/before-pack.cjs
 afterPack: desktop/after-pack.cjs
 asar: true
 npmRebuild: false

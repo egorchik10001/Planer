@@ -1,11 +1,11 @@
 import React from 'react';
-import Connection from './DesktopSettings';
+import Connection,{type LocalVoiceStatus} from './DesktopSettings';
 import {createRoot} from 'react-dom/client';
 import Planner from '../../app/Planner';
 import '../../app/globals.css';
 import './mac.css';
 
-declare global{interface Window{plannerDesktop:{request:(request:any)=>Promise<{status:number;body:any}>;connection:()=>Promise<{url:string|null;version:string;voice:boolean;repository:string;updates:boolean}>;connect:(url:string)=>Promise<{error?:string}>;openLocal:()=>Promise<void>;openConnection:(section?:string)=>Promise<void>;saveVoiceKey:(key:string)=>Promise<void>;removeVoiceKey:()=>Promise<void>;checkUpdates:()=>Promise<void>;onCommand:(callback:(name:string)=>void)=>()=>void}}}
+declare global{interface Window{plannerDesktop:{request:(request:any)=>Promise<{status:number;body:any}>;connection:()=>Promise<{url:string|null;version:string;voice:boolean;repository:string;updates:boolean}>;connect:(url:string)=>Promise<{error?:string}>;openLocal:()=>Promise<void>;goBack:()=>Promise<void>;openConnection:(section?:string)=>Promise<void>;localVoiceStatus:()=>Promise<LocalVoiceStatus>;prepareLocalVoice:()=>Promise<LocalVoiceStatus>;pauseLocalVoice:()=>Promise<void>;checkUpdates:()=>Promise<void>;onCommand:(callback:(name:string)=>void)=>()=>void}}}
 const native=window.plannerDesktop;
 if(!native)throw new Error('Запустите планер через Mac-приложение.');
 const originalFetch=window.fetch.bind(window);

@@ -1,0 +1,4 @@
+[
+  {"id":"speech","name":"Распознавание речи","file":"whisper-small-q5_1.bin","bytes":190085487,"sha256":"ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb","url":"https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q5_1.bin","license":"MIT"},
+  {"id":"planner","name":"Разбор задач","file":"qwen2.5-1.5b-q4_k_m.gguf","bytes":1117320736,"sha256":"6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e","url":"https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q4_k_m.gguf","license":"Apache-2.0"}
+]
