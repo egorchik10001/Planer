@@ -8,6 +8,7 @@ import {createRequire} from 'node:module';
 import {pcmSpeechData} from '../desktop/wav.ts';
 import {installBackGesture} from '../lib/back-gesture.ts';
 const {ModelManager}=createRequire(import.meta.url)('../desktop-dist/model-manager.cjs');
+const {exactTimeEvidence,groundSpokenDates}=createRequire(import.meta.url)('../desktop-dist/local-voice.cjs');
 const bytes=Buffer.from('verified local model'),model={id:'test',name:'Test',file:'test.bin',bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),url:'https://example.test/model'};
 function setup(t,fetcher){const dir=mkdtempSync(join(tmpdir(),'planner-model-test-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));return new ModelManager(dir,[model],fetcher);}
 test('resume verifies the completed file before making the model ready',async t=>{
@@ -32,4 +33,16 @@ test('back gesture ignores vertical/forward scroll and inputs, and triggers only
  const target=new EventTarget();let calls=0;const stop=installBackGesture(target,()=>calls++);
  const wheel=(x,y=0,input=false)=>{const e=new Event('wheel',{cancelable:true});Object.assign(e,{deltaX:x,deltaY:y,deltaMode:0});if(input)Object.defineProperty(e,'target',{value:{closest:()=>true}});target.dispatchEvent(e);};
  wheel(-200,200);wheel(200);wheel(-200,0,true);assert.equal(calls,0);wheel(-70);wheel(-70);wheel(-200);assert.equal(calls,1);stop();wheel(-200);assert.equal(calls,1);
+});
+test('vague parts of the day cannot invent a precise clock time',()=>{
+ for(const phrase of ['утром','завтра вечером','после обеда','на неделе'])assert.equal(exactTimeEvidence(phrase,phrase),false);
+ for(const phrase of ['в 10 утра','в десять утра','15:30','в 15','в полдень'])assert.equal(exactTimeEvidence(phrase,phrase),true);
+ assert.equal(exactTimeEvidence('Завтра утром','в 10 утра'),false);
+});
+test('day and deadline are grounded separately across tasks and calendar boundaries',()=>{
+ const tasks=[{title:'Забрать посылку',date:null,dueDate:null},{title:'Отправить макет',date:'2025-12-31',dueDate:'2025-12-31'}];
+ groundSpokenDates('Завтра утром забрать посылку. К пятнице отправить макет.',tasks,'2025-12-31');
+ assert.equal(tasks[0].date,'2026-01-01');assert.equal(tasks[1].date,null);assert.equal(tasks[1].dueDate,'2026-01-02');
+ groundSpokenDates('В четверг отправить макет к субботе.',[tasks[1]],'2025-12-31');
+ assert.equal(tasks[1].date,'2026-01-01');assert.equal(tasks[1].dueDate,'2026-01-03');
 });

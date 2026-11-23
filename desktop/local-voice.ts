@@ -6,7 +6,13 @@ import {dateKey,addDays,makeTask,type Entity} from '../lib/planner';
 import {assistantResultSchema,assistantJsonSchema} from '../lib/assistant-core';
 import {taskSchema} from '../lib/validation';
 import {pcmSpeechData} from './wav';
+import {groundSpokenDates} from './voice-dates';
+export {groundSpokenDates} from './voice-dates';
 type Input={body?:string;capturedAt?:string;file?:{name:string;type:string;bytes:Uint8Array}};
+export function exactTimeEvidence(text:string,evidence:unknown){
+ if(typeof evidence!=='string'||!evidence.trim()||!text.toLowerCase().includes(evidence.trim().toLowerCase()))return false;
+ return /(?:^|\s)(?:[01]?\d|2[0-3])(?::[0-5]\d|\s*(?:час|утра|вечера|дня|ночи))|(?:^|\s)(?:в|к|с)\s+(?:\d{1,2}|один|два|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|семнадцать|восемнадцать|девятнадцать|двадцать|половин|четверть)|полдень|полночь/i.test(evidence);
+}
 // Grammar constrains dates/times as well as JSON syntax. An absent value is null.
 const localSchema=structuredClone(assistantJsonSchema);
 const taskProperties:any=localSchema.properties.tasks.items.properties;
@@ -24,6 +30,7 @@ export class LocalVoice{
  private run(binary:string,args:string[],timeout=180000):Promise<string>{return new Promise((resolve,reject)=>{
   const child=spawn(join(this.engines,binary),args,{stdio:['ignore','pipe','pipe']});this.child=child;let stdout='',stderr='';let timedOut=false;
   const timer=setTimeout(()=>{timedOut=true;child.kill('SIGTERM');setTimeout(()=>child.kill('SIGKILL'),1500).unref();},timeout);
+  child.stdout?.setEncoding('utf8');
   child.stdout?.on('data',chunk=>{stdout+=chunk.toString();if(stdout.length>1024*1024)child.kill('SIGTERM');});child.stderr?.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-2000);});
   child.on('error',()=>{clearTimeout(timer);this.child=null;reject(Error('Не удалось запустить локальную модель. Переустановите последнюю версию планера.'));});
   child.on('close',code=>{clearTimeout(timer);this.child=null;if(code===0)resolve(stdout);else reject(Error(timedOut?'Разбор занял слишком много времени. Попробуйте более короткую запись.':'Локальная модель не смогла обработать запись. Повторите попытку; исходная заметка сохранена.'));});
@@ -59,8 +66,11 @@ export class LocalVoice{
    const generated=await this.run('llama-completion',['-m',this.models.path('planner'),'-f',join(job,'prompt.txt'),'-jf',join(job,'schema.json'),'-n','1200','-c','8192','-t','4','-ngl','99','--temp','0','-no-cnv','--no-display-prompt','--log-verbosity','0','--offline']);
    const start=generated.indexOf('{'),end=generated.lastIndexOf('}');if(start<0||end<start)throw Error('Не удалось собрать короткие задачи. Попробуйте сказать проще.');
    const raw=JSON.parse(generated.slice(start,end+1));
-   const usedTimes=new Set<string>();for(const task of raw.tasks||[]){const evidence=typeof task.timeEvidence==='string'?task.timeEvidence.trim().toLowerCase():'';if(!evidence||!text.toLowerCase().includes(evidence)||usedTimes.has(evidence))task.time=null;else if(task.time)usedTimes.add(evidence);}
+   const usedTimes=new Set<string>();for(const task of raw.tasks||[]){const evidence=typeof task.timeEvidence==='string'?task.timeEvidence.trim().toLowerCase():'';if(!exactTimeEvidence(text,evidence)||usedTimes.has(evidence))task.time=null;else if(task.time)usedTimes.add(evidence);}
+   if(raw.kind!=='create')raw.tasks=[];
+   if(raw.kind!=='update')raw.changes=[];
    const result=assistantResultSchema.parse(raw),projectIds=new Set(projects.map(p=>p.id)),taskIds=new Set(tasks.map(t=>t.id));
+   groundSpokenDates(text,result.tasks,today);
    for(const task of result.tasks){if(task.projectId&&!projectIds.has(task.projectId))task.projectId=null;taskSchema.parse(makeTask(task.title,{...task,subtasks:task.subtasks.map(title=>({id:crypto.randomUUID(),title,done:false}))}));}
    if(result.changes.some(c=>!taskIds.has(c.id))||result.taskIds.some(id=>!taskIds.has(id)))throw Error('Не удалось однозначно выбрать существующую задачу. Уточните её название.');
    return{status:200,body:{result,sourceText:text,local:true}};
