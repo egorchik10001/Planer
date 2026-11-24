@@ -35,7 +35,9 @@ module.exports=async({app,win,localStore,createWindow})=>{
  win.webContents.sendInputEvent({type:'mouseMove',...points.start});win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...points.start});await delay(240);
  assert.ok(await js("!!document.querySelector('.task-drag-preview')"),'hold anywhere picks up task');
  win.webContents.sendInputEvent({type:'mouseMove',...points.end});await delay(80);win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...points.end});
- await until(()=>localStore.read().entities.find(e=>e.id===task.id).data.date===points.date);await delay(300);assert.equal(await js("!!document.querySelector('.task-drag-preview')"),false);assert.equal(await js("!!document.querySelector('.task-dialog[open]')"),false);
+ await until(()=>localStore.read().entities.find(e=>e.id===task.id).data.date===points.date);
+ await until(()=>js("!document.querySelector('.task-drag-preview')"));
+ assert.equal(await js("!!document.querySelector('.task-dialog[open]')"),false);
  const unchanged=JSON.stringify(localStore.read().entities),source=await js("(()=>{const r=document.querySelector('.week-cards .card-main').getBoundingClientRect();return{x:Math.round(r.left+20),y:Math.round(r.top+12)}})()");
  win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...source});await delay(240);win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...source});await delay(350);assert.equal(JSON.stringify(localStore.read().entities),unchanged,'Escape cancels without writes');
  await delay(300);writeFileSync(path.join(app.getPath('userData'),'desktop-week.png'),(await win.webContents.capturePage()).toPNG());
