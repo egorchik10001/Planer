@@ -1,5 +1,7 @@
 name: Windows app
 on:
+  push:
+    branches: ['release/windows-v*']
   workflow_dispatch:
     inputs:
       publish:
@@ -87,7 +89,7 @@ jobs:
           compression-level: 0
           retention-days: 14
   publish:
-    if: inputs.publish && github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/heads/release/windows-v') || (inputs.publish && github.ref == 'refs/heads/main')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -102,6 +104,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
+          if [[ "${GITHUB_EVENT_NAME}" == push && "${GITHUB_REF_NAME}" != "release/windows-v${VERSION}" ]]; then
+            echo "The release branch must match the version in package.json." >&2
+            exit 1
+          fi
           file="Planner-${VERSION}-windows-x64-setup.exe"
           cd release
           sha256sum "$file" > SHA256SUMS.txt
