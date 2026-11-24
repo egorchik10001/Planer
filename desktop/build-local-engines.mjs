@@ -22,7 +22,7 @@ async function prepare(){
 export async function buildLocalEngines(arch=process.arch){
  if(!['arm64','x64'].includes(arch))throw Error('Unsupported Mac architecture '+arch);
  if(windows&&arch!=='x64')throw Error('Windows builds currently target x64.');
- await(prepared||=prepare());const output=resolve(root,'desktop-native/engines',windows?'win-x64':arch);mkdirSync(output,{recursive:true});
+ const output=resolve(root,'desktop-native/engines',windows?'win-x64':arch);mkdirSync(output,{recursive:true});
  const cmake=windows?'cmake.exe':join(base,'cmake/CMake.app/Contents/bin/cmake');
  const platformFlags=windows?[
   '-A','x64','-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded',
@@ -33,6 +33,7 @@ export async function buildLocalEngines(arch=process.arch){
   const executor=windows?target+'.exe':target;
   const platformArch=windows?'win-x64':arch;
   const signature=sources.find(s=>s.name===name).hash+'-'+platformArch+'-static-v1';if(existsSync(join(output,executor))&&existsSync(join(output,executor+'.build'))&&readFileSync(join(output,executor+'.build'),'utf8')===signature)continue;
+  await(prepared||=prepare());
   const build=join(base,`build-${name}-${platformArch}`),log=join(base,`build-${name}-${platformArch}.log`);
   const args=['-S',join(base,name),'-B',build,'-DCMAKE_BUILD_TYPE=Release','-DCMAKE_POLICY_VERSION_MINIMUM=3.5','-DBUILD_SHARED_LIBS=OFF','-DGGML_NATIVE=OFF','-DGGML_OPENMP=OFF','-DGGML_BACKEND_DL=OFF','-DGGML_CCACHE=OFF',...platformFlags];
   if(name==='whisper')args.push('-DWHISPER_BUILD_TESTS=OFF','-DWHISPER_BUILD_SERVER=OFF','-DWHISPER_BUILD_EXAMPLES=ON','-DWHISPER_CURL=OFF');

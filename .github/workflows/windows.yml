@@ -44,6 +44,17 @@ jobs:
           "value=$(node -p 'require("./package.json").version')" >> $env:GITHUB_OUTPUT
       - run: npm ci
       - run: npm run typecheck
+      - uses: actions/cache/restore@v5
+        id: engines
+        with:
+          path: desktop-native/engines/win-x64
+          key: windows-x64-engines-${{ hashFiles('desktop/build-local-engines.mjs', 'desktop/engine-utf8.manifest') }}
+      - run: npm run desktop:build
+      - uses: actions/cache/save@v5
+        if: steps.engines.outputs.cache-hit != 'true'
+        with:
+          path: desktop-native/engines/win-x64
+          key: ${{ steps.engines.outputs.cache-primary-key }}
       - run: npm run test:desktop
       - run: node --test tests/domain.test.mjs tests/outbox.test.mjs tests/offline-spaces.test.mjs
       - run: npx --no-install electron-builder --win nsis --x64 --publish never
