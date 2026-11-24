@@ -29,12 +29,14 @@ export class LocalVoice{
  stop(){this.models.pause();this.child?.kill('SIGKILL');}
  private run(binary:string,args:string[],timeout=process.platform==='win32'?360000:180000):Promise<string>{return new Promise((resolve,reject)=>{
   const executable=process.platform==='win32'?binary+'.exe':binary;
+  const smoke=process.argv.includes('--planner-smoke')&&process.env.PLANNER_SMOKE_VOICE_WAV;
   const child=spawn(join(this.engines,executable),args,{stdio:['ignore','pipe','pipe'],windowsHide:true});this.child=child;let stdout='',stderr='';let timedOut=false;
+  if(smoke)console.log('Starting '+executable);
   const timer=setTimeout(()=>{timedOut=true;child.kill('SIGTERM');setTimeout(()=>child.kill('SIGKILL'),1500).unref();},timeout);
   child.stdout?.setEncoding('utf8');
   child.stdout?.on('data',chunk=>{stdout+=chunk.toString();if(stdout.length>1024*1024)child.kill('SIGTERM');});child.stderr?.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-2000);});
-  child.on('error',()=>{clearTimeout(timer);this.child=null;reject(Error('Не удалось запустить локальную модель. Переустановите последнюю версию планера.'));});
-  child.on('close',code=>{clearTimeout(timer);this.child=null;if(code===0)resolve(stdout);else reject(Error(timedOut?'Разбор занял слишком много времени. Попробуйте более короткую запись.':'Локальная модель не смогла обработать запись. Повторите попытку; исходная заметка сохранена.'));});
+  child.on('error',error=>{if(smoke)console.error(error.message);clearTimeout(timer);this.child=null;reject(Error('Не удалось запустить локальную модель. Переустановите последнюю версию планера.'));});
+  child.on('close',code=>{if(smoke)console.log(executable+' exit code '+code+(code===0?'':': '+stderr));clearTimeout(timer);this.child=null;if(code===0)resolve(stdout);else reject(Error(timedOut?'Разбор занял слишком много времени. Попробуйте более короткую запись.':'Локальная модель не смогла обработать запись. Повторите попытку; исходная заметка сохранена.'));});
  });}
  async handle(input:Input,entities:Entity[]){
   if(this.busy)return{status:409,body:{error:'Дождитесь разбора предыдущей записи.'}};

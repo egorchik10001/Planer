@@ -84,7 +84,9 @@ module.exports=async({app,win,localStore,createWindow})=>{
   await until(()=>js("!!document.querySelector('.saved-recordings button[aria-label=\"Разобрать запись\"]:enabled')"));
   const before=localStore.read().entities.filter(e=>e.kind==='task').length;
   await js("document.querySelector('.saved-recordings button[aria-label=\"Разобрать запись\"]').click()");
-  await until(()=>js("document.querySelectorAll('.voice-draft').length===2"),1800);
+  await until(()=>js("!!document.querySelector('.voice-draft,.capture-dialog .error-message,.capture-dialog .voice-source')"),4200)
+   .catch(async error=>{throw Error(await js("document.querySelector('.capture-body')?.innerText")||error.message);});
+  assert.equal(await js("document.querySelectorAll('.voice-draft').length"),2,await js("document.querySelector('.capture-body').innerText"));
   assert.equal(localStore.read().entities.filter(e=>e.kind==='task').length,before,'local preview does not create tasks');
   await js(`(()=>{
    document.querySelector('.voice-draft summary').click();
