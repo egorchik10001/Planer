@@ -36,7 +36,15 @@ export class LocalVoice{
   child.stdout?.setEncoding('utf8');
   child.stdout?.on('data',chunk=>{stdout+=chunk.toString();if(stdout.length>1024*1024)child.kill('SIGTERM');});child.stderr?.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-2000);});
   child.on('error',error=>{if(smoke)console.error(error.message);clearTimeout(timer);this.child=null;reject(Error('Не удалось запустить локальную модель. Переустановите последнюю версию планера.'));});
-  child.on('close',code=>{if(smoke)console.log(executable+' exit code '+code+(code===0?'':': '+stderr));clearTimeout(timer);this.child=null;if(code===0)resolve(stdout);else reject(Error(timedOut?'Разбор занял слишком много времени. Попробуйте более короткую запись.':'Локальная модель не смогла обработать запись. Повторите попытку; исходная заметка сохранена.'));});
+  child.on('close',code=>{
+   if(smoke)console.log(executable+' exit code '+code+(code===0?'':': '+stderr));
+   clearTimeout(timer);this.child=null;
+   if(code===0){resolve(stdout);return;}
+   if(process.platform==='win32'&&code!==null&&(code>>>0)===0xc000001d){
+    reject(Error('Для локального разбора голоса на Windows нужен процессор с AVX2. Исходная запись сохранена.'));return;
+   }
+   reject(Error(timedOut?'Разбор занял слишком много времени. Попробуйте более короткую запись.':'Локальная модель не смогла обработать запись. Повторите попытку; исходная заметка сохранена.'));
+  });
  });}
  async handle(input:Input,entities:Entity[]){
   if(this.busy)return{status:409,body:{error:'Дождитесь разбора предыдущей записи.'}};
@@ -66,7 +74,7 @@ export class LocalVoice{
    const example={kind:'create',message:'Два дела',taskIds:[],tasks:[{title:'Позвонить стоматологу',notes:'',projectId:personal,date:addDays(today,1),timeEvidence:'в 15',time:'15:00',dueDate:null,repeat:'none',subtasks:[]},{title:'Купить хлеб',notes:'',projectId:home,date:null,timeEvidence:null,time:null,dueDate:null,repeat:'none',subtasks:[]}],changes:[]};
    const prompt=`<|im_start|>system\n${system}\ntimeEvidence — точная цитата с точным временем именно этого дела из сообщения, иначе null и time null. Не повторяй время предыдущего дела. Отсутствующее значение — null, не пустая строка. dueDate всегда null, если не назван крайний срок. Не дублируй date в dueDate. Каждое отдельное предложение имеет свою дату; не переноси «завтра» на другие предложения. Заголовок начинай с инфинитива: «Позвонить», «Купить», «Забрать».<|im_end|>\n<|im_start|>user\nЗавтра в 15 позвонить стоматологу, ещё купить хлеб.<|im_end|>\n<|im_start|>assistant\n${JSON.stringify(example)}<|im_end|>\n<|im_start|>user\n${text}<|im_end|>\n<|im_start|>assistant\n`;
    writeFileSync(join(job,'prompt.txt'),prompt,{mode:0o600});writeFileSync(join(job,'schema.json'),JSON.stringify(localSchema),{mode:0o600});
-   const generated=await this.run('llama-completion',['-m',this.models.path('planner'),'-f',join(job,'prompt.txt'),'-jf',join(job,'schema.json'),'-n','1200','-c','8192','-t','4','-ngl','99','--temp','0','-no-cnv','--no-display-prompt','--log-verbosity','0','--offline']);
+   const generated=await this.run('llama-completion',['-m',this.models.path('planner'),'-f',join(job,'prompt.txt'),'-jf',join(job,'schema.json'),'-n','1200','-c','8192','-t','4','-ngl',process.platform==='win32'?'0':'99','--temp','0','-no-cnv','--no-display-prompt','--log-verbosity','0','--offline']);
    const start=generated.indexOf('{'),end=generated.lastIndexOf('}');if(start<0||end<start)throw Error('Не удалось собрать короткие задачи. Попробуйте сказать проще.');
    const raw=JSON.parse(generated.slice(start,end+1));
    const usedTimes=new Set<string>();for(const task of raw.tasks||[]){const evidence=typeof task.timeEvidence==='string'?task.timeEvidence.trim().toLowerCase():'';if(!exactTimeEvidence(text,evidence)||usedTimes.has(evidence))task.time=null;else if(task.time)usedTimes.add(evidence);}

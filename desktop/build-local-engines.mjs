@@ -26,16 +26,18 @@ export async function buildLocalEngines(arch=process.arch){
  const cmake=windows?'cmake.exe':join(base,'cmake/CMake.app/Contents/bin/cmake');
  const platformFlags=windows?[
   '-A','x64','-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded',
-  '-DCMAKE_EXE_LINKER_FLAGS=/MANIFESTINPUT:"'+join(root,'desktop/engine-utf8.manifest')+'"',
-  '-DGGML_SSE42=OFF','-DGGML_AVX=OFF','-DGGML_AVX2=OFF','-DGGML_BMI2=OFF','-DGGML_FMA=OFF','-DGGML_F16C=OFF'
+  '-DCMAKE_EXE_LINKER_FLAGS=/MANIFESTINPUT:"'+join(root,'desktop/engine-utf8.manifest')+'"'
  ]:['-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0','-DCMAKE_OSX_ARCHITECTURES='+(arch==='x64'?'x86_64':'arm64'),'-DGGML_METAL=ON','-DGGML_METAL_EMBED_LIBRARY=ON'];
  for(const [name,target] of [['whisper','whisper-cli'],['llama','llama-completion']]){
   const executor=windows?target+'.exe':target;
   const platformArch=windows?'win-x64':arch;
-  const signature=sources.find(s=>s.name===name).hash+'-'+platformArch+'-static-v1';if(existsSync(join(output,executor))&&existsSync(join(output,executor+'.build'))&&readFileSync(join(output,executor+'.build'),'utf8')===signature)continue;
+  const windowsAvx2=windows&&name==='llama';
+  const signature=sources.find(s=>s.name===name).hash+'-'+platformArch+(windowsAvx2?'-static-avx2':'-static-v1');if(existsSync(join(output,executor))&&existsSync(join(output,executor+'.build'))&&readFileSync(join(output,executor+'.build'),'utf8')===signature)continue;
   await(prepared||=prepare());
   const build=join(base,`build-${name}-${platformArch}`),log=join(base,`build-${name}-${platformArch}.log`);
   const args=['-S',join(base,name),'-B',build,'-DCMAKE_BUILD_TYPE=Release','-DCMAKE_POLICY_VERSION_MINIMUM=3.5','-DBUILD_SHARED_LIBS=OFF','-DGGML_NATIVE=OFF','-DGGML_OPENMP=OFF','-DGGML_BACKEND_DL=OFF','-DGGML_CCACHE=OFF',...platformFlags];
+  if(windows)for(const feature of ['SSE42','AVX','AVX2','FMA','F16C'])args.push('-DGGML_'+feature+'='+(windowsAvx2?'ON':'OFF'));
+  if(windows)args.push('-DGGML_BMI2=OFF');
   if(name==='whisper')args.push('-DWHISPER_BUILD_TESTS=OFF','-DWHISPER_BUILD_SERVER=OFF','-DWHISPER_BUILD_EXAMPLES=ON','-DWHISPER_CURL=OFF');
   else args.push('-DLLAMA_BUILD_TESTS=OFF','-DLLAMA_BUILD_EXAMPLES=OFF','-DLLAMA_BUILD_TOOLS=ON','-DLLAMA_BUILD_SERVER=OFF','-DLLAMA_BUILD_APP=OFF','-DLLAMA_OPENSSL=OFF','-DLLAMA_SUBPROCESS=OFF');
   console.log('Building local '+name+' for '+platformArch);await run(cmake,args,log);await run(cmake,['--build',build,'--config','Release','--target',target,'-j','4'],log);
