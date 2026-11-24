@@ -2,6 +2,7 @@ const {readFileSync,writeFileSync}=require('node:fs');
 const {join}=require('node:path');
 const {spawnSync}=require('node:child_process');
 module.exports=async context=>{
+ if(context.electronPlatformName!=='darwin')return;
  const config=JSON.parse(readFileSync(join(context.packager.projectDir,'desktop/update-config.json'),'utf8'));
  const plist=join(context.appOutDir,'Планер.app/Contents/Info.plist');
  const values={SUPublicEDKey:config.publicKey,SUFeedURL:`https://github.com/${config.repository}/releases/latest/download/appcast-${context.arch===1?'x64':'arm64'}.xml`};

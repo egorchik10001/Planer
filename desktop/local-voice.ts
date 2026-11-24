@@ -27,8 +27,9 @@ export class LocalVoice{
  constructor(readonly directory:string,readonly engines:string){this.models=new ModelManager(join(directory,'models'));mkdirSync(join(directory,'jobs'),{recursive:true,mode:0o700});this.initialized=this.models.verifyExisting();}
  async setup(){await this.initialized;void this.models.start();return this.models.status();}
  stop(){this.models.pause();this.child?.kill('SIGKILL');}
- private run(binary:string,args:string[],timeout=180000):Promise<string>{return new Promise((resolve,reject)=>{
-  const child=spawn(join(this.engines,binary),args,{stdio:['ignore','pipe','pipe']});this.child=child;let stdout='',stderr='';let timedOut=false;
+ private run(binary:string,args:string[],timeout=process.platform==='win32'?360000:180000):Promise<string>{return new Promise((resolve,reject)=>{
+  const executable=process.platform==='win32'?binary+'.exe':binary;
+  const child=spawn(join(this.engines,executable),args,{stdio:['ignore','pipe','pipe'],windowsHide:true});this.child=child;let stdout='',stderr='';let timedOut=false;
   const timer=setTimeout(()=>{timedOut=true;child.kill('SIGTERM');setTimeout(()=>child.kill('SIGKILL'),1500).unref();},timeout);
   child.stdout?.setEncoding('utf8');
   child.stdout?.on('data',chunk=>{stdout+=chunk.toString();if(stdout.length>1024*1024)child.kill('SIGTERM');});child.stderr?.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-2000);});
@@ -39,7 +40,7 @@ export class LocalVoice{
   if(this.busy)return{status:409,body:{error:'Дождитесь разбора предыдущей записи.'}};
   this.busy=true;let job='';
   try{
-   await this.initialized;if(!this.models.ready())throw Error('Подготовьте голос на этом Mac в настройках. Запись сохранена, API-ключ не нужен.');
+   await this.initialized;if(!this.models.ready())throw Error('Подготовьте голос в настройках приложения. Запись сохранена, API-ключ не нужен.');
    job=mkdtempSync(join(this.directory,'jobs','voice-'));let text='',capturedAt:unknown;
    if(input.file){
     const bytes=input.file.bytes;if(!(bytes instanceof Uint8Array)||bytes.byteLength<44||bytes.byteLength>16*1024*1024)throw Error('Запишите сообщение до трёх минут.');

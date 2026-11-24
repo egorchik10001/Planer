@@ -1,0 +1,117 @@
+name: Windows app
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the tested Windows installer as a GitHub release
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  audio-fixture:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Synthesize a Russian voice note
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y espeak-ng ffmpeg
+          espeak-ng -v ru -s 145 -w synthetic.wav 'Завтра в десять утра нужно позвонить в сервис. Ещё купить молоко для дома.'
+          ffmpeg -hide_banner -loglevel error -i synthetic.wav -ar 16000 -ac 1 -c:a pcm_s16le ru-voice.wav
+      - uses: actions/upload-artifact@v7
+        with:
+          name: synthetic-voice-fixture
+          path: ru-voice.wav
+          if-no-files-found: error
+          retention-days: 1
+  build:
+    runs-on: windows-2025
+    needs: audio-fixture
+    timeout-minutes: 40
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - id: version
+        shell: pwsh
+        run: |
+          "value=$(node -p 'require("./package.json").version')" >> $env:GITHUB_OUTPUT
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:desktop
+      - run: node --test tests/domain.test.mjs tests/outbox.test.mjs tests/offline-spaces.test.mjs
+      - run: npx --no-install electron-builder --win nsis --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - uses: actions/download-artifact@v8
+        with:
+          name: synthetic-voice-fixture
+          path: test-audio
+      - name: Install and verify Windows app
+        shell: pwsh
+        env:
+          PLANNER_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          $installer = (Resolve-Path "release/Planner-$env:PLANNER_VERSION-windows-x64-setup.exe").Path
+          $installDir = Join-Path $env:RUNNER_TEMP 'Планер тест'
+          $setup = Start-Process -FilePath $installer -ArgumentList "/S /D=$installDir" -PassThru -Wait
+          if ($setup.ExitCode -ne 0) { throw "Setup exit code $($setup.ExitCode)" }
+          $exe = Join-Path $installDir 'Planner.exe'
+          if (!(Test-Path $exe)) { throw "The installer did not install Planner.exe" }
+          $env:PLANNER_SMOKE_DIRECTORY = Join-Path $env:RUNNER_TEMP 'Планер профиль'
+          $models = New-Item -ItemType Directory -Force (Join-Path $env:PLANNER_SMOKE_DIRECTORY 'voice/models')
+          Get-Content -Raw desktop/local-models.json | ConvertFrom-Json | ForEach-Object {
+            $file = Join-Path $models.FullName $_.file
+            curl.exe --fail --location --retry 3 --max-time 360 --silent --show-error "$($_.url)?download=true&fixture=$env:GITHUB_RUN_ID" --output $file
+            if ($LASTEXITCODE -ne 0) { throw "Failed to download $($_.file)" }
+            if ((Get-Item $file).Length -ne $_.bytes -or (Get-FileHash -Algorithm SHA256 $file).Hash -ne $_.sha256) {
+              throw "Incorrect checksum for $($_.file)"
+            }
+          }
+          $env:PLANNER_SMOKE_VOICE_WAV = (Resolve-Path 'test-audio/ru-voice.wav').Path
+          $stdout = Join-Path $env:RUNNER_TEMP 'planner-smoke.out'
+          $stderr = Join-Path $env:RUNNER_TEMP 'planner-smoke.err'
+          $app = Start-Process -FilePath $exe -ArgumentList '--planner-smoke' -PassThru -Wait -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          Get-Content $stdout, $stderr
+          if ($app.ExitCode -ne 0) { throw "Planner smoke test exit code $($app.ExitCode)" }
+          if (!(Select-String -Path $stdout -SimpleMatch 'Native voice smoke passed')) { throw "Voice test did not finish" }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Planner-windows-x64
+          path: release/Planner-*-windows-x64-setup.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+  publish:
+    if: inputs.publish && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: Planner-windows-x64
+          path: release
+      - name: Publish Windows release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          file="Planner-${VERSION}-windows-x64-setup.exe"
+          cd release
+          sha256sum "$file" > SHA256SUMS.txt
+          gh release create "windows-v${VERSION}" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false \
+            --title "Планер для Windows ${VERSION}" --notes-file - \
+            "$file#Установщик для Windows · Intel и AMD (x64)" SHA256SUMS.txt <<'NOTES'
+          Скачайте файл с окончанием `windows-x64-setup.exe` для Windows 11 на процессоре Intel или AMD. Запустите установщик и откройте «Планер» из меню «Пуск». Сборка без подписи издателя.
+
+          План хранится на компьютере. Дела можно перетаскивать между днями и проектами. Чтобы разбирать записи в задачи без интернета, один раз нажмите «Планер → Настройки приложения → Подготовить голос» и загрузите модели (около 2,7 ГБ).
+
+          [Скачать версию для Mac](https://github.com/egorchik10001/Planer/releases/latest)
+          NOTES

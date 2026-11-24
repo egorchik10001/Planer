@@ -12,6 +12,5 @@ await bundle({entryPoints:{'local-store':resolve(root,'desktop/local-store.ts'),
 
 copyFileSync(resolve(root,'THIRD-PARTY-NOTICES.txt'),resolve(root,'desktop-dist/renderer/THIRD-PARTY-NOTICES.txt'));
 
-await buildNative();
-
-await buildLocalEngines();
+if (process.platform === 'darwin') await buildNative();
+if (process.platform === 'darwin' || process.platform === 'win32') await buildLocalEngines();

@@ -45,7 +45,7 @@ export class LocalStore{
   if(op.kind==='task'){
    if(after.projectId&&!state.entities.some(e=>e.id===after.projectId&&e.kind==='project'&&!(e.data as any).deletedAt))throw new Error('Выберите существующий проект.');
    if(after.assigneeIds.some((id:string)=>id!==USER))throw new Error('В локальном плане можно назначить задачу только себе.');
-   if(after.attachments.some((a:any)=>!this.attachmentPath(a.key)||!existsSync(this.attachmentPath(a.key)!)))throw new Error('Файл вложения не найден на этом Mac.');
+   if(after.attachments.some((a:any)=>!this.attachmentPath(a.key)||!existsSync(this.attachmentPath(a.key)!)))throw new Error('Файл вложения не найден на этом компьютере.');
   }
   const at=new Date().toISOString(),entity={id:op.id,kind:op.kind,data:after,version:(current?.version||0)+1,updatedAt:at};
   state.entities=state.entities.filter(e=>e.id!==op.id).concat(entity);
@@ -75,12 +75,12 @@ export class LocalStore{
     const bytes=this.attachment(url.searchParams.get('key')||'');return bytes?{status:200,body:{bytes:new Uint8Array(bytes)}}:json({error:'Файл не найден.'},404);
    }
    const state=this.read(),body=input.body?JSON.parse(input.body):{};
-   if(path==='/api/sync'&&method==='GET')return json({entities:state.entities,members:[{id:USER,name:'Я',email:'На этом Mac',role:'owner'}]});
+   if(path==='/api/sync'&&method==='GET')return json({entities:state.entities,members:[{id:USER,name:'Я',email:'На этом компьютере',role:'owner'}]});
    if(path==='/api/sync'&&method==='POST'){
     if(!Array.isArray(body.operations)||body.operations.length>100)return json({error:'Неверная очередь.'},400);
     const operations=body.operations.map((op:any)=>mutationSchema.parse(op)),accepted:string[]=[],conflicts:any[]=[],rejected:any[]=[];
     for(const op of operations){try{const candidate=structuredClone(state),r=this.apply(candidate,op);if(r.accepted){Object.assign(state,candidate);accepted.push(op.opId);}else conflicts.push(r.conflict);}catch(e){rejected.push({opId:op.opId,id:op.id,error:e instanceof Error&&!e.message.startsWith('[')?e.message:'Проверьте поля дела.'});}}
-    if(accepted.length)this.save(state);return json({entities:state.entities,members:[{id:USER,name:'Я',email:'На этом Mac',role:'owner'}],accepted,conflicts,rejected});
+    if(accepted.length)this.save(state);return json({entities:state.entities,members:[{id:USER,name:'Я',email:'На этом компьютере',role:'owner'}],accepted,conflicts,rejected});
    }
    if(path==='/api/history'&&method==='GET')return json({history:state.history.filter(h=>h.entityId===url.searchParams.get('id')).reverse()});
    if(path==='/api/history'&&method==='POST'){

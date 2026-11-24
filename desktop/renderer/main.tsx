@@ -5,9 +5,9 @@ import Planner from '../../app/Planner';
 import '../../app/globals.css';
 import './mac.css';
 
-declare global{interface Window{plannerDesktop:{request:(request:any)=>Promise<{status:number;body:any}>;connection:()=>Promise<{url:string|null;version:string;voice:boolean;repository:string;updates:boolean}>;connect:(url:string)=>Promise<{error?:string}>;openLocal:()=>Promise<void>;goBack:()=>Promise<void>;openConnection:(section?:string)=>Promise<void>;localVoiceStatus:()=>Promise<LocalVoiceStatus>;prepareLocalVoice:()=>Promise<LocalVoiceStatus>;pauseLocalVoice:()=>Promise<void>;checkUpdates:()=>Promise<void>;onCommand:(callback:(name:string)=>void)=>()=>void}}}
+declare global{interface Window{plannerDesktop:{request:(request:any)=>Promise<{status:number;body:any}>;connection:()=>Promise<{url:string|null;version:string;voice:boolean;repository:string;updates:boolean;platform:string}>;connect:(url:string)=>Promise<{error?:string}>;openLocal:()=>Promise<void>;goBack:()=>Promise<void>;openConnection:(section?:string)=>Promise<void>;localVoiceStatus:()=>Promise<LocalVoiceStatus>;prepareLocalVoice:()=>Promise<LocalVoiceStatus>;pauseLocalVoice:()=>Promise<void>;checkUpdates:()=>Promise<void>;onCommand:(callback:(name:string)=>void)=>()=>void}}}
 const native=window.plannerDesktop;
-if(!native)throw new Error('Запустите планер через Mac-приложение.');
+if(!native)throw new Error('Запустите планер через установленное приложение.');
 const originalFetch=window.fetch.bind(window);
 window.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
  const request=input instanceof Request?input:new Request(new URL(String(input),location.href),init);
@@ -19,7 +19,7 @@ window.fetch=async(input:RequestInfo|URL,init?:RequestInit)=>{
  }
  const result=await native.request(wire);return new Response(JSON.stringify(result.body),{status:result.status,headers:{'Content-Type':'application/json'}});
 };
-class Boundary extends React.Component<{children:React.ReactNode},{error:boolean}>{state={error:false};static getDerivedStateFromError(){return{error:true};}render(){return this.state.error?<main className="mac-connection"><h1>Не удалось открыть план</h1><p>Данные на Mac сохранены. Попробуй перезапустить приложение.</p><button className="button primary" onClick={()=>location.reload()}>Открыть заново</button></main>:this.props.children;}}
+class Boundary extends React.Component<{children:React.ReactNode},{error:boolean}>{state={error:false};static getDerivedStateFromError(){return{error:true};}render(){return this.state.error?<main className="mac-connection"><h1>Не удалось открыть план</h1><p>Данные на компьютере сохранены. Попробуй перезапустить приложение.</p><button className="button primary" onClick={()=>location.reload()}>Открыть заново</button></main>:this.props.children;}}
 const connection=location.pathname==='/connection';
-createRoot(document.getElementById('root')!).render(<Boundary>{connection?<Connection/>:<Planner owner="mac-local:mac-local" email="Личный план на этом Mac" spaceId={null} spaces={[]} currentUserId="mac-local" localMode onVoiceSettings={()=>void native.openConnection('voice')} onConnect={()=>void native.openConnection()}/>}</Boundary>);
+createRoot(document.getElementById('root')!).render(<Boundary>{connection?<Connection/>:<Planner owner="mac-local:mac-local" email="Личный план на этом компьютере" spaceId={null} spaces={[]} currentUserId="mac-local" localMode onVoiceSettings={()=>void native.openConnection('voice')} onConnect={()=>void native.openConnection()}/>}</Boundary>);
 native.onCommand(name=>window.dispatchEvent(new Event('planner:'+name)));

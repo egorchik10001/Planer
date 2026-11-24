@@ -5,20 +5,20 @@ const {setTimeout:delay}=require('node:timers/promises');
 module.exports=async({app,win,localStore,createWindow})=>{
  const errors=[];win.webContents.on('console-message',event=>{if(event.level==='error')errors.push(event.message);});
  const voiceFixture=process.env.PLANNER_SMOKE_VOICE_WAV;
- const timeout=setTimeout(()=>{console.error('Desktop smoke timed out',win.webContents.getURL());app.exit(1);},voiceFixture?240000:45000);
+ const timeout=setTimeout(()=>{console.error('Desktop smoke timed out',win.webContents.getURL());app.exit(1);},voiceFixture?780000:45000);
  console.log('Desktop smoke: waiting for first local render');
  const js=code=>win.webContents.executeJavaScript(code,true);
  async function until(check,attempts=120){for(let i=0;i<attempts;i++){if(await check())return;await delay(100);}throw new Error('Timed out waiting for desktop UI.');}
- await until(()=>js("document.body.innerText.includes('Сохранено на Mac')"));
+ await until(()=>js("document.body.innerText.includes('Сохранено на компьютере')"));
  assert.equal(await js("typeof require"),'undefined');assert.equal(await js("typeof process"),'undefined');
  assert.equal(await js("location.protocol"),'planner:');assert.ok(await js("document.fonts.check('16px Onest')"));
- const title='Проверить Mac-версию';
+ const title='Проверить приложение';
  await js("Object.defineProperty(navigator,'onLine',{get:()=>false,configurable:true});window.dispatchEvent(new Event('offline'))");
  await js(`(()=>{const input=document.querySelector('.quick-form input');if(!input)throw Error('No quick add');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(title)});input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
  await delay(100);await js("document.querySelector('.quick-form').requestSubmit()");
  await until(async()=>localStore.read().entities.some(e=>e.data.title===title));
  const task=localStore.read().entities.find(e=>e.data.title===title);assert.ok(task);
- await until(()=>js("document.body.innerText.includes('Сохранено на Mac')"));
+ await until(()=>js("document.body.innerText.includes('Сохранено на компьютере')"));
  await js("delete navigator.onLine;window.dispatchEvent(new Event('online'))");
  const base=localStore.read().entities.find(e=>e.kind==='settings').data;const day=new Intl.DateTimeFormat('en-CA',{timeZone:base.timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
  // Additional tasks exercise the second weekly row, time sorting and local IPC persistence.
@@ -26,7 +26,7 @@ module.exports=async({app,win,localStore,createWindow})=>{
   const data={...task.data,id:crypto.randomUUID(),title:'Дело '+(i+1),date:day,time:['18:00','08:00','12:00',null][i],order:i};
   const response=localStore.request({url:'/api/sync?user=mac-local',method:'POST',body:JSON.stringify({operations:[{opId:crypto.randomUUID(),id:data.id,kind:'task',changes:data,before:{},baseVersion:0,source:'manual'}]})});assert.equal(response.status,200);
  }
- win.reload();await until(()=>js("document.body.innerText.includes('Сохранено на Mac')&&document.body.innerText.includes('Проверить Mac-версию')"));
+ win.reload();await until(()=>js("document.body.innerText.includes('Сохранено на компьютере')&&document.body.innerText.includes('Проверить приложение')"));
  await js("[...document.querySelectorAll('.sidebar nav button')].find(b=>b.innerText.includes('Неделя')).click()");
  await delay(300);
  const layout=await js("(()=>{const cards=[...document.querySelectorAll('.week-cards .task-card')];return {count:cards.length,top:cards.map(c=>c.getBoundingClientRect().top),text:cards.map(c=>c.innerText)};})()");
@@ -60,7 +60,7 @@ module.exports=async({app,win,localStore,createWindow})=>{
  await js("window.plannerDesktop.openConnection()");await until(()=>js("!!document.querySelector('[data-app-back]')"));
  await js("window.dispatchEvent(new WheelEvent('wheel',{deltaX:-140,deltaY:0,bubbles:true,cancelable:true}))");await until(()=>js("!!document.querySelector('.topbar')"));
  await js("window.plannerDesktop.openConnection()");await until(()=>js("!!document.querySelector('[data-app-back]')"));
- win.webContents.sendInputEvent({type:'keyDown',keyCode:'[',modifiers:['meta']});win.webContents.sendInputEvent({type:'keyUp',keyCode:'[',modifiers:['meta']});await until(()=>js("!!document.querySelector('.topbar')"));
+ win.webContents.sendInputEvent({type:'keyDown',keyCode:'[',modifiers:[process.platform==='darwin'?'meta':'control']});win.webContents.sendInputEvent({type:'keyUp',keyCode:'[',modifiers:[process.platform==='darwin'?'meta':'control']});await until(()=>js("!!document.querySelector('.topbar')"));
  // Recreate to prove on-disk data survived a fresh window.
  if(voiceFixture){
   const wav=require('node:fs').readFileSync(voiceFixture).toString('base64');

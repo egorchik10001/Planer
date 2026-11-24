@@ -5,6 +5,9 @@ const {localURL,serverOrigin,assetPath,externalURL}=require('./security.cjs');
 const {LocalStore}=require('../desktop-dist/local-store.cjs');
 const {LocalVoice}=require('../desktop-dist/local-voice.cjs');
 const updateConfig=require('./update-config.json');
+const isMac=process.platform==='darwin';
+const downloadPage='https://github.com/'+updateConfig.repository+'#скачать-планер';
+if(process.platform==='win32')app.setAppUserModelId('app.planner.personal');
 const testMode=process.argv.includes('--planner-smoke');
 if(testMode){const dir=process.env.PLANNER_SMOKE_DIRECTORY;if(!dir||!path.isAbsolute(dir))throw new Error('Smoke test needs its own absolute data directory.');app.setPath('userData',dir);}
 app.setName('Планер');
@@ -13,7 +16,11 @@ let window=null,localStore=null,quitting=false,config={url:null,mode:'local'};
 const localWindows=new Set();
 let nativeBridge=null,localVoice=null;
 function updateFeed(){return 'https://github.com/'+updateConfig.repository+'/releases/latest/download/appcast-'+process.arch+'.xml';}
-function checkUpdates(){if(!app.isPackaged){void dialog.showMessageBox({message:'Обновления доступны в установленной версии приложения.'});return;}try{nativeBridge.checkUpdates();}catch(error){void dialog.showMessageBox({type:'warning',message:'Не удалось проверить обновления',detail:error.message});}}
+function checkUpdates(){
+ if(!isMac){void shell.openExternal(downloadPage);return;}
+ if(!app.isPackaged){void dialog.showMessageBox({message:'Обновления доступны в установленной версии приложения.'});return;}
+ try{nativeBridge.checkUpdates();}catch(error){void dialog.showMessageBox({type:'warning',message:'Не удалось проверить обновления',detail:error.message});}
+}
 const renderer=path.join(__dirname,'../desktop-dist/renderer');
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.woff2':'font/woff2','.png':'image/png','.svg':'image/svg+xml','.webmanifest':'application/manifest+json'};
 function configFile(){return path.join(app.getPath('userData'),'connection.json');}
@@ -38,11 +45,19 @@ async function goBack(){
  if(config.mode==='server'&&config.url)createWindow('server');else openLocal();
 }
 function menu(){Menu.setApplicationMenu(Menu.buildFromTemplate([
- {label:'Планер',submenu:[{role:'about',label:'О Планере'},{label:'Проверить обновления…',click:checkUpdates},{type:'separator'},{label:'Настройки приложения…',accelerator:'CmdOrCtrl+,',click:()=>openLocal(true)},{label:'Открыть локальный план',click:()=>openLocal()},{label:'Открыть подключённый сервер',enabled:!!config.url,click:()=>{saveConfig({...config,mode:'server'});createWindow('server');}},{type:'separator'},{label:'Показать папку данных',click:()=>shell.openPath(path.join(app.getPath('userData'),'plan'))},{type:'separator'},{role:'hide',label:'Скрыть Планер'},{role:'hideOthers',label:'Скрыть остальные'},{role:'unhide',label:'Показать все'},{type:'separator'},{role:'quit',label:'Завершить Планер'}]},
+ {label:'Планер',submenu:[
+  isMac?{role:'about',label:'О Планере'}:{label:'О Планере',click:()=>void dialog.showMessageBox({title:'О Планере',message:'Планер '+app.getVersion(),detail:'Личный планер с локальным хранением задач.'})},
+  {label:isMac?'Проверить обновления…':'Скачать новую версию…',click:checkUpdates},
+  {type:'separator'},{label:'Настройки приложения…',accelerator:'CmdOrCtrl+,',click:()=>openLocal(true)},{label:'Открыть локальный план',click:()=>openLocal()},
+  {label:'Открыть подключённый сервер',enabled:!!config.url,click:()=>{saveConfig({...config,mode:'server'});createWindow('server');}},
+  {type:'separator'},{label:'Показать папку данных',click:()=>shell.openPath(path.join(app.getPath('userData'),'plan'))},{type:'separator'},
+  ...(isMac?[{role:'hide',label:'Скрыть Планер'},{role:'hideOthers',label:'Скрыть остальные'},{role:'unhide',label:'Показать все'},{type:'separator'}]:[]),
+  {role:'quit',label:'Завершить Планер'}
+ ]},
  {label:'Файл',submenu:[{label:'Новое дело',accelerator:'CmdOrCtrl+N',click:()=>command('new-task')},{label:'Поиск',accelerator:'CmdOrCtrl+K',click:()=>command('search')},{type:'separator'},{role:'close',label:'Закрыть окно'}]},
  {label:'Правка',submenu:[{role:'undo',label:'Отменить'},{role:'redo',label:'Повторить'},{type:'separator'},{role:'cut',label:'Вырезать'},{role:'copy',label:'Скопировать'},{role:'paste',label:'Вставить'},{role:'selectAll',label:'Выбрать всё'}]},
  {label:'Вид',submenu:[{role:'reload',label:'Обновить'},{role:'resetZoom',label:'Исходный масштаб'},{role:'zoomIn',label:'Увеличить'},{role:'zoomOut',label:'Уменьшить'},{type:'separator'},{role:'togglefullscreen',label:'На весь экран'}]},
- {label:'Окно',submenu:[{role:'minimize',label:'Свернуть'},{role:'zoom',label:'Изменить размер'},{role:'front',label:'Все окна на передний план'}]}
+ ...(isMac?[{label:'Окно',submenu:[{role:'minimize',label:'Свернуть'},{role:'zoom',label:'Изменить размер'},{role:'front',label:'Все окна на передний план'}]}]:[])
  ]));}
 function createWindow(mode='local',connection=false){
  const old=window,isLocal=mode!=='server';
@@ -61,8 +76,8 @@ function createWindow(mode='local',connection=false){
  win.on('swipe',(_event,direction)=>{if(direction==='right')goBack();});
  win.on('app-command',(_event,command)=>{if(command==='browser-backward')goBack();});
  win.webContents.on('before-input-event',(event,input)=>{if((input.meta||input.control)&&input.type==='keyDown'&&(input.key==='['||input.code==='BracketLeft')){event.preventDefault();void goBack();}});
- win.webContents.on('did-fail-load',(_event,code,_description,_url,isMainFrame)=>{if(isMainFrame&&code!==-3&&!isLocal&&!testMode){win.show();void dialog.showMessageBox(win,{type:'warning',message:'Не удалось открыть сервер',detail:'Проверьте подключение к интернету и адрес сервера. Локальные задачи остаются на этом Mac.',buttons:['Открыть локальный план','Повторить'],defaultId:0,cancelId:0}).then(result=>{if(result.response===0)openLocal();else void win.loadURL(initial).catch(()=>{});});}});
- win.on('close',event=>{if(!quitting&&!testMode&&window===win){event.preventDefault();win.hide();}});
+ win.webContents.on('did-fail-load',(_event,code,_description,_url,isMainFrame)=>{if(isMainFrame&&code!==-3&&!isLocal&&!testMode){win.show();void dialog.showMessageBox(win,{type:'warning',message:'Не удалось открыть сервер',detail:'Проверьте подключение к интернету и адрес сервера. Локальные задачи остаются на этом компьютере.',buttons:['Открыть локальный план','Повторить'],defaultId:0,cancelId:0}).then(result=>{if(result.response===0)openLocal();else void win.loadURL(initial).catch(()=>{});});}});
+ win.on('close',event=>{if(isMac&&!quitting&&!testMode&&window===win){event.preventDefault();win.hide();}});
  win.on('closed',()=>localWindows.delete(contentsId));
  win.once('ready-to-show',()=>{if(!testMode)win.show();if(old&&!old.isDestroyed())old.destroy();});
  void win.loadURL(initial).catch(()=>{});menu();return win;
@@ -74,11 +89,11 @@ function configurePermissions(partition){
  ses.setPermissionRequestHandler(async(contents,permission,callback,details)=>{
   if(!allowed(details.requestingUrl||contents.getURL())){callback(false);return;}
   if(permission==='media'){
-   if(details.mediaTypes?.some(type=>type!=='audio')){callback(false);return;}
-   callback(await systemPreferences.askForMediaAccess('microphone'));return;
+   if(details.mediaTypes?.length!==1||details.mediaTypes[0]!=='audio'){callback(false);return;}
+   callback(isMac?await systemPreferences.askForMediaAccess('microphone').catch(()=>false):true);return;
   }
   if(permission==='notifications'){
-   const response=await dialog.showMessageBox({type:'question',message:'Разрешить напоминания Планера?',detail:'Уведомления о запланированных делах появятся на этом Mac.',buttons:['Разрешить','Позже'],defaultId:0,cancelId:1});callback(response.response===0);return;
+   const response=await dialog.showMessageBox({type:'question',message:'Разрешить напоминания Планера?',detail:'Уведомления о запланированных делах появятся на этом компьютере.',buttons:['Разрешить','Позже'],defaultId:0,cancelId:1});callback(response.response===0);return;
   }
   callback(false);
  });
@@ -88,13 +103,15 @@ if(!testMode&&!app.requestSingleInstanceLock())app.quit();
 else{
  app.on('second-instance',()=>{if(window){window.show();window.focus();}});
  app.on('before-quit',()=>{quitting=true;localVoice?.stop();});
+ app.on('window-all-closed',()=>{if(!isMac&&!testMode)app.quit();});
  app.on('activate',()=>{if(window&&!window.isDestroyed())window.show();else if(localStore)createWindow(config.mode);});
  app.whenReady().then(async()=>{
   mkdirSync(app.getPath('userData'),{recursive:true,mode:0o700});
   try{if(existsSync(configFile())){const c=JSON.parse(readFileSync(configFile(),'utf8'));config={url:c.url?serverOrigin(c.url):null,mode:c.mode==='server'&&c.url?'server':'local'};}}catch{config={url:null,mode:'local'};}
   localStore=new LocalStore(path.join(app.getPath('userData'),'plan'));
-  nativeBridge=require(app.isPackaged?path.join(process.resourcesPath,'planner-native.node'):path.join(__dirname,'../desktop-native/planner-native.node'));
-  localVoice=new LocalVoice(path.join(app.getPath('userData'),'voice'),app.isPackaged?path.join(process.resourcesPath,'engines'):path.join(__dirname,'../desktop-native/engines',process.arch));
+  if(isMac)nativeBridge=require(app.isPackaged?path.join(process.resourcesPath,'planner-native.node'):path.join(__dirname,'../desktop-native/planner-native.node'));
+  const engineArch=process.platform==='win32'?'win-'+process.arch:process.arch;
+  localVoice=new LocalVoice(path.join(app.getPath('userData'),'voice'),app.isPackaged?path.join(process.resourcesPath,'engines'):path.join(__dirname,'../desktop-native/engines',engineArch));
   session.fromPartition('persist:planner-local').protocol.handle('planner',async request=>{
    if(!localURL(request.url))return new Response(null,{status:403});
    const url=new URL(request.url);
@@ -113,7 +130,7 @@ else{
     return localStore.request(request);
    }catch{return{status:422,body:{error:'Не удалось обработать запрос. Проверьте настройки приложения.'}};}
   });
-  ipcMain.handle('planner:connection',event=>{requireLocal(event);return{url:config.url,version:app.getVersion(),voice:localVoice.models.ready(),repository:updateConfig.repository,updates:app.isPackaged};});
+  ipcMain.handle('planner:connection',event=>{requireLocal(event);return{url:config.url,version:app.getVersion(),voice:localVoice.models.ready(),repository:updateConfig.repository,updates:isMac&&app.isPackaged,platform:process.platform};});
   ipcMain.handle('planner:connect',(event,value)=>{requireLocal(event);try{const url=serverOrigin(value);saveConfig({url,mode:'server'});setImmediate(()=>createWindow('server'));return{};}catch(error){return{error:error.message};}});
   ipcMain.handle('planner:local',event=>{requireLocal(event);setImmediate(()=>openLocal());});
   ipcMain.handle('planner:open-connection',(event,section)=>{requireLocal(event);setImmediate(()=>openLocal(section==='voice'?'voice':true));});
@@ -123,8 +140,8 @@ else{
   ipcMain.handle('planner:local-voice-pause',event=>{requireLocal(event);localVoice.models.pause();});
   ipcMain.handle('planner:updates',event=>{requireLocal(event);checkUpdates();});
   configurePermissions('persist:planner-local');configurePermissions('persist:planner-server');
-  app.setAboutPanelOptions({applicationName:'Планер',applicationVersion:app.getVersion(),copyright:'Личный планер · локальные данные и свой сервер'});
-  if(app.isPackaged)try{nativeBridge.startUpdates(updateFeed());}catch(error){console.warn('Updater initialization failed:',error.message);}
+  if(isMac)app.setAboutPanelOptions({applicationName:'Планер',applicationVersion:app.getVersion(),copyright:'Личный планер · локальные данные и свой сервер'});
+  if(nativeBridge&&app.isPackaged&&!testMode)try{nativeBridge.startUpdates(updateFeed());}catch(error){console.warn('Updater initialization failed:',error.message);}
   const win=createWindow(testMode?'local':config.mode);
   if(localStore.recovered&&!testMode)void dialog.showMessageBox(win,{type:'warning',message:'План восстановлен из предыдущей копии',detail:'Повреждённый файл сохранён в папке данных. Проверьте последние изменения.',buttons:['Понятно']});
   if(testMode){try{await require('./smoke.cjs')({app,win,localStore,createWindow,root:path.join(__dirname,'..')});app.exit(0);}catch(error){console.error(error);app.exit(1);}}
