@@ -25,7 +25,7 @@ export async function buildLocalEngines(arch=process.arch){
  await(prepared||=prepare());const output=resolve(root,'desktop-native/engines',windows?'win-x64':arch);mkdirSync(output,{recursive:true});
  const cmake=windows?'cmake.exe':join(base,'cmake/CMake.app/Contents/bin/cmake');
  const platformFlags=windows?[
-  '-G','Visual Studio 17 2022','-A','x64','-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded',
+  '-A','x64','-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded',
   '-DCMAKE_EXE_LINKER_FLAGS=/MANIFESTINPUT:"'+join(root,'desktop/engine-utf8.manifest')+'"',
   '-DGGML_SSE42=OFF','-DGGML_AVX=OFF','-DGGML_AVX2=OFF','-DGGML_BMI2=OFF','-DGGML_FMA=OFF','-DGGML_F16C=OFF'
  ]:['-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0','-DCMAKE_OSX_ARCHITECTURES='+(arch==='x64'?'x86_64':'arm64'),'-DGGML_METAL=ON','-DGGML_METAL_EMBED_LIBRARY=ON'];

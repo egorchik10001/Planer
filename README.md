@@ -59,7 +59,7 @@
 
 ## Собрать из исходников
 
-На Windows x64 нужны Node.js 24, npm, CMake и Visual Studio 2022 с компонентом **Разработка классических приложений на C++**. Выполните `npm ci` и `npm run desktop:dist:win`. В папке `release/` появится установщик `.exe`. Задача **Actions → Windows app** проверяет установку, сохранение задач и разбор тестовой записи на Windows.
+На Windows x64 нужны Node.js 24, npm, CMake 4.4+ и Visual Studio 2026 с компонентом **Разработка классических приложений на C++**. Выполните `npm ci` и `npm run desktop:dist:win`. В папке `release/` появится установщик `.exe`. Задача **Actions → Windows app** проверяет установку, сохранение задач и разбор тестовой записи на Windows.
 
 На Mac нужны Xcode Command Line Tools, Node.js 24 и npm. Сборка скачивает проверенные архивы CMake, whisper.cpp и llama.cpp и компилирует движки с Metal. Выполните в корне репозитория:
 

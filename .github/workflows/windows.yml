@@ -80,7 +80,10 @@ jobs:
           $app = Start-Process -FilePath $exe -ArgumentList '--planner-smoke' -PassThru -Wait -RedirectStandardOutput $stdout -RedirectStandardError $stderr
           Get-Content $stdout, $stderr
           if ($app.ExitCode -ne 0) { throw "Planner smoke test exit code $($app.ExitCode)" }
-          if (!(Select-String -Path $stdout -SimpleMatch 'Native voice smoke passed')) { throw "Voice test did not finish" }
+          $plan = Get-Content -Raw -Encoding utf8 (Join-Path $env:PLANNER_SMOKE_DIRECTORY 'plan/planner.json') | ConvertFrom-Json
+          if (!($plan.entities | Where-Object { $_.kind -eq 'task' -and $_.data.title -eq 'Позвонить в автосервис' })) {
+            throw "The app did not save the corrected voice task"
+          }
       - uses: actions/upload-artifact@v7
         with:
           name: Planner-windows-x64
