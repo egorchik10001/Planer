@@ -16,6 +16,26 @@ const privateTask=makeTask('Личное дело Алисы');assert.equal((awa
 assert(!(await b.call('/api/sync')).d.entities.some(e=>e.id===privateTask.id));
 assert.equal((await a2.call('/api/auth/sign-in/email',{email,password})).r.status,200);a2.id=a.id;assert((await a2.call('/api/sync')).d.entities.some(e=>e.id===privateTask.id));
 console.log('PASS private isolation and same account on another device');
+const copiedProject={id:'copied-'+suffix,name:'План с iPhone',color:'#adc7c7',deletedAt:null};
+const copiedTask=makeTask('Перенесённое дело',{
+ projectId:copiedProject.id,date:'2026-11-26',time:'14:30',repeat:'weekly',
+ subtasks:[{id:crypto.randomUUID(),title:'Проверить срок',done:false}]
+});
+const localCopy={format:'planner-export-v1',queue:[],entities:[
+ {kind:'project',data:copiedProject},{kind:'task',data:copiedTask}
+]};
+const copied=await a2.call('/api/import',localCopy);
+assert.equal(copied.r.status,200);
+assert.equal(copied.d.imported,2);
+const observed=(await a.call('/api/sync')).d.entities.find(e=>e.id===copiedTask.id);
+assert.deepEqual(observed.data,copiedTask);
+assert.equal((await a.call('/api/sync',{operations:[{
+ opId:crypto.randomUUID(),id:copiedTask.id,kind:'task',
+ changes:{time:'15:45'},before:{time:'14:30'},baseVersion:observed.version,source:'manual'
+}]})).d.accepted.length,1);
+assert.equal((await a2.call('/api/import',localCopy)).d.skipped,2);
+assert.equal((await a2.call('/api/sync')).d.entities.find(e=>e.id===copiedTask.id).data.time,'15:45');
+console.log('PASS local iPhone-format import, cross-device edits, and repeated import without overwrite');
 const space=(await a.call('/api/spaces',{action:'create',name:'Команда QA'})).d.id;assert(space);const path='/api/sync?space='+space;
 assert.equal((await b.call(path)).r.status,401);assert.equal((await b.call('/api/spaces',{action:'invite',spaceId:space})).r.status,403);
 const shared=makeTask('Общее дело',{projectId:'general'});await a.call(path);assert.equal((await a.call(path,{operations:[op(shared)]})).d.accepted.length,1);

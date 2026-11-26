@@ -71,6 +71,7 @@ final class PlannerController: UIViewController, WKNavigationDelegate, WKUIDeleg
 
     private func display(_ webView: WKWebView, local: Bool) {
         if let current = displayedWebView {
+            if current !== webView { recorder.cancel() }
             stack.removeArrangedSubview(current)
             current.removeFromSuperview()
         }
@@ -133,7 +134,7 @@ final class PlannerController: UIViewController, WKNavigationDelegate, WKUIDeleg
             return .allow
         }
         if action.navigationType == .linkActivated, url.scheme == "https" || url.scheme == "tg" {
-            UIApplication.shared.open(url)
+            await UIApplication.shared.open(url)
         }
         return .cancel
     }
@@ -145,7 +146,7 @@ final class PlannerController: UIViewController, WKNavigationDelegate, WKUIDeleg
                   : "Проверь адрес сервера и интернет. Кнопка «План на iPhone» вернёт к локальным делам.")
     }
 
-    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
+    func webView(_ webView: WKWebView, decideMediaCapturePermissionsFor origin: WKSecurityOrigin, initiatedBy frame: WKFrameInfo, type: WKMediaCaptureType) async -> WKPermissionDecision {
         // The bundled interface uses the recorder below. Web pages never control raw camera or microphone access.
         .deny
     }
