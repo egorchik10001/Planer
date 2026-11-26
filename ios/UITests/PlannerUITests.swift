@@ -28,7 +28,8 @@ final class PlannerUITests: XCTestCase {
         save.tap()
         let card = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(app.staticTexts["Сохранено на iPhone"].firstMatch.waitForExistence(timeout: 10))
+        let saved = app.buttons["Сохранено на iPhone. Нажмите, чтобы обновить"].firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 10), app.debugDescription)
         app.terminate()
 
         app.launch()
