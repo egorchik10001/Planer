@@ -39,6 +39,7 @@ jobs:
           mkdir -p ios/generated/package/Payload
           ditto ios/generated/device/Build/Products/Release-iphoneos/Planner.app ios/generated/package/Payload/Planner.app
           test -f ios/generated/package/Payload/Planner.app/web/index.html
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' ios/generated/package/Payload/Planner.app/Info.plist)" = 0.1.0
           ditto -c -k --keepParent ios/generated/package/Payload ios/generated/Planner-0.1.0-ios-altstore.ipa
           cd ios/generated
           shasum -a 256 Planner-0.1.0-ios-altstore.ipa > SHA256SUMS.txt
