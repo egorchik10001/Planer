@@ -39,10 +39,10 @@ jobs:
           mkdir -p ios/generated/package/Payload
           ditto ios/generated/device/Build/Products/Release-iphoneos/Planner.app ios/generated/package/Payload/Planner.app
           test -f ios/generated/package/Payload/Planner.app/web/index.html
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' ios/generated/package/Payload/Planner.app/Info.plist)" = 0.1.0
-          ditto -c -k --keepParent ios/generated/package/Payload ios/generated/Planner-0.1.0-ios-altstore.ipa
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' ios/generated/package/Payload/Planner.app/Info.plist)" = 0.1.1
+          ditto -c -k --keepParent ios/generated/package/Payload ios/generated/Planner-0.1.1-ios-altstore.ipa
           cd ios/generated
-          shasum -a 256 Planner-0.1.0-ios-altstore.ipa > SHA256SUMS.txt
+          shasum -a 256 Planner-0.1.1-ios-altstore.ipa > SHA256SUMS.txt
       - name: Check local data and settings on an iPhone simulator
         timeout-minutes: 15
         run: |
@@ -69,7 +69,7 @@ jobs:
         with:
           name: Planner-iPhone-AltStore
           path: |
-            ios/generated/Planner-0.1.0-ios-altstore.ipa
+            ios/generated/Planner-0.1.1-ios-altstore.ipa
             ios/generated/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
