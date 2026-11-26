@@ -40,3 +40,37 @@ dialog{color:var(--ink);font-family:var(--font)}dialog::backdrop{background:#242
 .month-day.current-day{box-shadow:inset 0 0 0 2px var(--ink)}
 .month-count{padding:2px 7px;border-radius:8px;background:#dce2cf;color:var(--ink);font-size:12px}
 @media(max-width:700px){.month-day{min-height:56px;padding:5px}.mobile-tabs{flex-wrap:wrap}}
+
+.task-dialog {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+}
+.task-form .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.task-form label,
+.task-form .form-section,
+.task-form .subtask-row span,
+.task-form .attachment a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.task-form input:is([type=date], [type=time], [type=datetime-local]) {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-block-size: 44px;
+}
+.task-form input:is([type=date], [type=time], [type=datetime-local])::-webkit-date-and-time-value {
+  min-width: 0;
+  margin: 0;
+  text-align: start;
+}
+@media (max-width: 700px) {
+  .task-dialog {
+    touch-action: pan-y pinch-zoom;
+  }
+  .task-form .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
