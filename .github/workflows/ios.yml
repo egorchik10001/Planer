@@ -1,0 +1,67 @@
+name: iPhone app
+on:
+  push:
+    branches: ['ios/altstore-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: xcodebuild -version
+      - run: brew install xcodegen
+      - run: npm ci
+      - run: npm run typecheck
+      - run: bash ios/prepare-ios.sh
+      - uses: actions/cache/restore@v5
+        id: native
+        with:
+          path: ios/generated/lib
+          key: ios-voice-${{ runner.arch }}-${{ hashFiles('ios/engines/**', 'ios/build-engines.mjs') }}
+      - if: steps.native.outputs.cache-hit != 'true'
+        run: node ios/build-engines.mjs iphoneos iphonesimulator
+      - uses: actions/cache/save@v5
+        if: steps.native.outputs.cache-hit != 'true'
+        with:
+          path: ios/generated/lib
+          key: ${{ steps.native.outputs.cache-primary-key }}
+      - name: Build the iPhone app
+        run: |
+          xcodebuild -project ios/Planner.xcodeproj -scheme Planner -configuration Release -sdk iphoneos             -destination 'generic/platform=iOS' -derivedDataPath ios/generated/device CODE_SIGNING_ALLOWED=NO -quiet build
+          mkdir -p ios/generated/package/Payload
+          ditto ios/generated/device/Build/Products/Release-iphoneos/Planner.app ios/generated/package/Payload/Planner.app
+          test -f ios/generated/package/Payload/Planner.app/web/index.html
+          ditto -c -k --keepParent ios/generated/package/Payload ios/generated/Planner-0.1.0-ios-altstore.ipa
+          cd ios/generated
+          shasum -a 256 Planner-0.1.0-ios-altstore.ipa > SHA256SUMS.txt
+      - name: Check local data and settings on an iPhone simulator
+        run: |
+          SIMULATOR_ID=$(xcrun simctl list devices booted available --json | jq -r '[.devices[][] | select(.name|startswith("iPhone")) | .udid][0] // empty')
+          if [[ -z "$SIMULATOR_ID" ]]; then
+            SIMULATOR_ID=$(xcrun simctl list devices available --json | jq -r '[.devices[][] | select(.name|startswith("iPhone")) | .udid][-1] // empty')
+          fi
+          test -n "$SIMULATOR_ID"
+          xcodebuild -project ios/Planner.xcodeproj -scheme Planner -configuration Debug             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -derivedDataPath ios/generated/simulator             -parallel-testing-enabled NO -resultBundlePath ios/generated/PlannerUITests.xcresult -quiet test
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: Planner-iPhone-diagnostics
+          path: ios/generated/PlannerUITests.xcresult
+          if-no-files-found: ignore
+          retention-days: 2
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Planner-iPhone-AltStore
+          path: |
+            ios/generated/Planner-0.1.0-ios-altstore.ipa
+            ios/generated/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

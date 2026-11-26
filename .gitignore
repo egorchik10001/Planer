@@ -53,3 +53,7 @@ yarn-error.log*
 
 /desktop-native/
 /Frameworks/
+
+# Generated iOS assets, native archives and Xcode project
+/ios/generated/
+/ios/Planner.xcodeproj/

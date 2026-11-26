@@ -52,6 +52,7 @@
     "desktop-native",
     "desktop-dist",
     "Frameworks",
-    "release"
+    "release",
+    "ios/generated"
   ]
 }

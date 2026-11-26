@@ -1,0 +1,9 @@
+.ios-settings{max-width:670px;margin:auto;padding:18px 20px 100px}
+.ios-settings header{position:sticky;top:0;background:var(--bg);z-index:1;padding:10px 0}
+.ios-settings h1{font-size:clamp(32px,8vw,46px);letter-spacing:-.045em;line-height:1.05}
+.ios-settings section,.ios-settings form{border-top:1px solid var(--line);padding:18px 0 24px}
+.ios-settings h2{font-size:22px;margin:0 0 8px}
+.ios-settings p{margin:0 0 15px;color:var(--muted)}
+.ios-settings label,.ios-settings input,.ios-settings progress{display:block;width:100%;margin-bottom:12px}
+.ios-recovery{margin:10px 20px;padding:10px;border:1px solid var(--line)}
+input,textarea,select{font-size:16px}

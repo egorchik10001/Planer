@@ -1,25 +1,109 @@
 'use client';
 import {apiPath} from '../lib/api-path';
 import VoiceDraft, {type DraftFields} from './VoiceDraft';
+import {sharePlannerFile} from '../lib/ios-bridge';
 import {speechWav} from '../lib/voice-audio';
 import { useEffect,useRef,useState } from 'react';
 import { X,Mic,Square,ArrowRight,LoaderCircle,Download,RotateCcw,ImagePlus,Check,Search,Plus } from 'lucide-react';
 import { recordings,saveRecording,deleteRecording,type Recording } from '../lib/recordings';
-import {formatTaskCount,type Project} from '../lib/planner';
-type Props={currentUserId:string;spaceId:string|null;owner:string;projects:Project[];enabled:boolean;onClose:()=>void;onApply:(data:any)=>string[];onUndo:(ids:string[])=>void;onSearch:(ids:string[])=>void;onConfigure?:()=>void};
-export default function VoiceCapture({currentUserId,spaceId,owner,projects,enabled,onClose,onApply,onUndo,onSearch,onConfigure}:Props){
- const dialog=useRef<HTMLDialogElement>(null),recorder=useRef<MediaRecorder|null>(null),stream=useRef<MediaStream|null>(null),started=useRef(0),parts=useRef<Blob[]>([]),imageFile=useRef<File|null>(null),contextAt=useRef<string|undefined>(undefined),cancelled=useRef(false);
+import {prepareLocalVoice} from '../lib/local-assistant';
+import {formatTaskCount,type Entity,type Project} from '../lib/planner';
+type Props={iosEntities?:Entity[];currentUserId:string;spaceId:string|null;owner:string;projects:Project[];enabled:boolean;onClose:()=>void;onApply:(data:any)=>string[];onUndo:(ids:string[])=>void;onSearch:(ids:string[])=>void;onConfigure?:()=>void};
+export default function VoiceCapture({iosEntities,currentUserId,spaceId,owner,projects,enabled,onClose,onApply,onUndo,onSearch,onConfigure}:Props){
+ const dialog=useRef<HTMLDialogElement>(null),recorder=useRef<MediaRecorder|null>(null),stream=useRef<MediaStream|null>(null),started=useRef(0),parts=useRef<Blob[]>([]),imageFile=useRef<File|null>(null),contextAt=useRef<string|undefined>(undefined),nativeRecording=useRef(false),cancelled=useRef(false);
  const [state,setState]=useState('idle'),[seconds,setSeconds]=useState(0),[error,setError]=useState(''),[text,setText]=useState(''),[clip,setClip]=useState<Recording|null>(null),[saved,setSaved]=useState<Recording[]>([]),[result,setResult]=useState<any>(null),[applied,setApplied]=useState<string[]|null>(null),[image,setImage]=useState<string|null>(null);
- useEffect(()=>{cancelled.current=false;dialog.current?.showModal();recordings(owner).then(setSaved).catch(()=>{});return()=>{cancelled.current=true;if(recorder.current?.state==='recording')recorder.current.stop();stream.current?.getTracks().forEach(t=>t.stop());dialog.current?.close();};},[owner]);
+ useEffect(()=>{cancelled.current=false;dialog.current?.showModal();recordings(owner).then(setSaved).catch(()=>{});return()=>{cancelled.current=true;if(nativeRecording.current){nativeRecording.current=false;void window.plannerIOS?.cancelRecording().catch(()=>{});}if(recorder.current?.state==='recording')recorder.current.stop();stream.current?.getTracks().forEach(t=>t.stop());dialog.current?.close();};},[owner]);
  useEffect(()=>{if(state==='recording'&&seconds>=180)stop();},[state,seconds]);
  useEffect(()=>{if(state!=='recording')return;const t=setInterval(()=>setSeconds(Math.floor((Date.now()-started.current)/1000)),500);return()=>clearInterval(t);},[state]);
- async function start(){setError('');setState('requesting');try{cancelled.current=false;const acquired=await navigator.mediaDevices.getUserMedia({audio:true});if(cancelled.current){acquired.getTracks().forEach(t=>t.stop());return;}stream.current=acquired;parts.current=[];const mime=['audio/webm;codecs=opus','audio/mp4','audio/webm'].find(m=>MediaRecorder.isTypeSupported(m));const r=new MediaRecorder(stream.current,mime?{mimeType:mime}:undefined);recorder.current=r;r.ondataavailable=e=>{if(e.data.size)parts.current.push(e.data);};r.onstop=async()=>{stream.current?.getTracks().forEach(t=>t.stop());if(cancelled.current)return;try{const record=await saveRecording(owner,new Blob(parts.current,{type:r.mimeType}));setClip(record);setSaved(await recordings(owner));if(enabled&&onConfigure)await parse(record);else setState('recorded');}catch{setError('Не удалось сохранить запись. Не закрывайте окно — скачайте запись.');const record={id:'unsaved',blob:new Blob(parts.current,{type:r.mimeType}),at:new Date().toISOString()};setClip(record);setState('recorded');}};started.current=Date.now();setSeconds(0);r.start(1000);setState('recording');}catch{if(cancelled.current)return;setState('idle');setError('Не удалось включить микрофон. Разрешите доступ в браузере или напишите сообщение ниже.');}}
- function stop(){if(recorder.current?.state==='recording')recorder.current.stop();}
- async function parse(record:Recording|null=clip){if(record)contextAt.current=record.at;setError('');setState('processing');try{let response:Response;if(record){const form=new FormData();const local=!!window.plannerDesktop,audio=local?await speechWav(record.blob):record.blob,ext=local?'wav':audio.type.includes('mp4')?'m4a':'webm';form.append('audio',new File([audio],'voice.'+ext,{type:audio.type}));form.append('capturedAt',record.at);response=await fetch(apiPath('/api/assistant',spaceId,currentUserId),{method:'POST',body:form});}else response=await fetch(apiPath('/api/assistant',spaceId,currentUserId),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,image,capturedAt:contextAt.current})});const data:any=await response.json();if(!response.ok)throw new Error(data.error);if(cancelled.current)return;if(!record&&imageFile.current&&data.result.kind==='create'){const form=new FormData();form.append('file',imageFile.current);const upload=await fetch(apiPath('/api/attachments',spaceId,currentUserId),{method:'POST',body:form});const attachment:any=await upload.json();if(!upload.ok)throw new Error(attachment.error||'Не удалось сохранить исходный скриншот.');data.attachment=attachment;}if(cancelled.current)return;data.source=record?'voice':'manual';setResult(data);setApplied(null);
+ async function receiveRecording(blob:Blob){
+  if(cancelled.current)return;
+  try{
+   const record=await saveRecording(owner,blob);
+   if(cancelled.current)return;
+   setClip(record);setSaved(await recordings(owner));
+   if(enabled&&onConfigure)await parse(record);else setState('recorded');
+  }catch{
+   if(cancelled.current)return;
+   setError('Не удалось сохранить запись. Не закрывайте окно — скачайте запись.');
+   setClip({id:'unsaved',blob,at:new Date().toISOString()});setState('recorded');
+  }
+ }
+ async function start(){
+  setError('');setState('requesting');cancelled.current=false;
+  try{
+   if(window.plannerIOS){
+    await window.plannerIOS.startRecording();
+    if(cancelled.current){await window.plannerIOS.cancelRecording();return;}
+    nativeRecording.current=true;
+   }else{
+    const acquired=await navigator.mediaDevices.getUserMedia({audio:true});
+    if(cancelled.current){acquired.getTracks().forEach(t=>t.stop());return;}
+    stream.current=acquired;parts.current=[];
+    const mime=['audio/webm;codecs=opus','audio/mp4','audio/webm'].find(m=>MediaRecorder.isTypeSupported(m));
+    const r=new MediaRecorder(acquired,mime?{mimeType:mime}:undefined);recorder.current=r;
+    r.ondataavailable=e=>{if(e.data.size)parts.current.push(e.data);};
+    r.onstop=()=>{acquired.getTracks().forEach(t=>t.stop());void receiveRecording(new Blob(parts.current,{type:r.mimeType}));};
+    r.start(1000);
+   }
+   started.current=Date.now();setSeconds(0);setState('recording');
+  }catch(e){
+   stream.current?.getTracks().forEach(t=>t.stop());
+   if(cancelled.current)return;
+   setState('idle');setError(window.plannerIOS&&e instanceof Error?e.message:'Не удалось включить микрофон. Разрешите доступ или напишите сообщение ниже.');
+  }
+ }
+ function stop(){
+  if(nativeRecording.current&&window.plannerIOS){
+   nativeRecording.current=false;
+   setState('processing');
+   void window.plannerIOS.stopRecording().then(receiveRecording).catch(error=>{
+    if(cancelled.current)return;
+    setState('idle');setError(error instanceof Error?error.message:'Не удалось сохранить запись.');
+   });
+  }else if(recorder.current?.state==='recording')recorder.current.stop();
+ }
+ async function parse(record:Recording|null=clip){
+  if(record)contextAt.current=record.at;
+  setError('');setState('processing');
+  try{
+   let data:any;
+   const ios=window.plannerIOS;
+   if(ios&&iosEntities){
+    const source=record?await ios.transcribe(record.blob.type==='audio/wav'?record.blob:await speechWav(record.blob)):text;
+    if(cancelled.current)return;
+    const draft=prepareLocalVoice(source,contextAt.current,iosEntities);
+    data=draft.parse(await ios.generate(draft.prompt));
+   }else{
+    let response:Response;
+    if(record){
+     const form=new FormData(),local=!!window.plannerDesktop;
+     const audio=local&&record.blob.type!=='audio/wav'?await speechWav(record.blob):record.blob;
+     const ext=local?'wav':audio.type.includes('mp4')?'m4a':'webm';
+     form.append('audio',new File([audio],'voice.'+ext,{type:audio.type}));form.append('capturedAt',record.at);
+     response=await fetch(apiPath('/api/assistant',spaceId,currentUserId),{method:'POST',body:form});
+    }else{
+     response=await fetch(apiPath('/api/assistant',spaceId,currentUserId),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,image,capturedAt:contextAt.current})});
+    }
+    data=await response.json();
+    if(!response.ok)throw new Error(data.error);
+    if(cancelled.current)return;
+    if(!record&&imageFile.current&&data.result.kind==='create'){
+     const form=new FormData();form.append('file',imageFile.current);
+     const upload=await fetch(apiPath('/api/attachments',spaceId,currentUserId),{method:'POST',body:form});
+     const attachment:any=await upload.json();
+     if(!upload.ok)throw new Error(attachment.error||'Не удалось сохранить исходный скриншот.');
+     data.attachment=attachment;
+    }
+   }
+   if(cancelled.current)return;
+   data.source=record?'voice':'manual';setResult(data);setApplied(null);
    if(data.result.kind==='create'&&record&&!data.local){const ids=onApply(data);setApplied(ids);}else if(data.result.kind==='search'){onSearch(data.result.taskIds);}
    if(record&&record.id!=='unsaved'&&(data.result.kind==='search'||(data.result.kind==='create'&&!data.local))){await deleteRecording(record.id);setSaved(await recordings(owner));}setState('result');
- }catch(e){setError(e instanceof Error?e.message:'Не удалось разобрать. Попробуйте ещё раз.');setState(record?'recorded':'idle');}}
- function download(record:Recording){const a=document.createElement('a');a.href=URL.createObjectURL(record.blob);a.download='Голосовая заметка.'+(record.blob.type.includes('mp4')?'m4a':'webm');a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+ }catch(e){if(cancelled.current)return;setError(e instanceof Error&&!e.message.startsWith('[')?e.message:'Не удалось разобрать. Попробуйте ещё раз.');setState(record?'recorded':'idle');}}
+ function download(record:Recording){
+  const extension=record.blob.type==='audio/wav'?'wav':record.blob.type.includes('mp4')?'m4a':'webm';
+  void sharePlannerFile('Голосовая заметка.'+extension,record.blob).catch(()=>setError('Не удалось передать запись.'));
+ }
  async function loadImage(f:File){if(!['image/png','image/jpeg','image/webp'].includes(f.type)){setError('Выберите PNG, JPEG или WebP.');return;}if(f.size>5*1024*1024){setError('Выберите изображение до 5 МБ.');return;}const r=new FileReader();r.onload=()=>{imageFile.current=f;setImage(String(r.result));};r.readAsDataURL(f);}
  function editDraft(index:number, changes:Partial<DraftFields>){
   setResult((previous:typeof result)=>({...previous,result:{...previous.result,tasks:previous.result.tasks.map((task:DraftFields,i:number)=>i===index?{...task,...changes}:task)}}));
@@ -34,7 +118,7 @@ export default function VoiceCapture({currentUserId,spaceId,owner,projects,enabl
  {result.result.kind==='clarify'&&<><label>Уточнение<textarea rows={3} value={text} onChange={e=>setText(e.target.value)} placeholder="Уточните название или проект"/></label><button className="button primary" onClick={()=>{setText(result.sourceText+'\nВопрос: '+result.result.message+'\nУточнение: '+text);setTimeout(()=>setState('idle'),0);}}>Продолжить</button></>}
  {applied?<><button className="button primary full" onClick={onClose}><Check size={18}/> К плану</button>{result.result.kind==='create'&&<button className="text-action center" onClick={()=>{onUndo(applied);onClose();}}>Отменить добавление</button>}</>:result.result.kind!=='search'&&result.result.kind!=='clarify'&&<button className="button primary full" disabled={result.result.kind==='create'&&(!result.result.tasks.length||result.result.tasks.some((task:DraftFields)=>!task.title.trim()))} onClick={apply}><Check size={18}/> {result.result.kind==='update'?'Применить изменения':'Добавить в план'}</button>}
  </>:<><h2>{state==='requesting'?'Включаю микрофон':state==='recording'?'Расскажи о делах':state==='recorded'?'Запись сохранена':state==='processing'?'Собираю короткие задачи':'Что у тебя на уме?'}</h2><p className="hint">{state==='recording'?'Можно несколько сразу — обычными словами.':state==='processing'?'Определяю суть, проекты и даты.':'Запиши голосом или напиши. Можно и изменить уже созданное дело.'}</p>
- {!enabled&&<p className="notice">{onConfigure?'Один раз скачай модели в настройках. После этого речь и короткие задачи разбираются прямо на компьютере, без интернета и API-ключа.':'Для распознавания речи и коротких задач подключите умный голос. Запись остаётся на устройстве до разбора.'}{onConfigure&&<button className="text-action" onClick={onConfigure}>Подготовить голос →</button>}</p>}
+ {!enabled&&<p className="notice">{onConfigure?'Один раз скачай модели в настройках. После этого речь и короткие задачи разбираются прямо на устройстве, без интернета и API-ключа.':'Для распознавания речи и коротких задач подключите умный голос. Запись остаётся на устройстве до разбора.'}{onConfigure&&<button className="text-action" onClick={onConfigure}>Подготовить голос →</button>}</p>}
  {(state==='recording'||state==='recorded'||state==='processing')&&<div className={'audio-field '+(state==='recording'?'is-recording':'')}><div className="waveform" aria-hidden="true">{Array.from({length:29},(_,i)=><i key={i} style={{height:12+Math.round(Math.sin(i*1.9)**2*45),animationDelay:-(i%7)*.1+'s'}}/>)}</div>{state==='processing'?<LoaderCircle className="spin" size={30}/>:<strong>{String(Math.floor(seconds/60)).padStart(2,'0')}:{String(seconds%60).padStart(2,'0')}</strong>}</div>}
  {state==='recording'?<button className="record-stop" onClick={stop}><Square fill="currentColor" size={22}/><span>Остановить</span></button>:state==='recorded'?<><button className="button primary full" disabled={!enabled} onClick={()=>parse()}><ArrowRight size={18}/> Разобрать запись</button>{clip&&<button className="button secondary full" onClick={()=>download(clip)}><Download size={18}/> Скачать запись</button>}<button className="text-action center" onClick={()=>{setClip(null);contextAt.current=undefined;setState('idle');}}>Записать ещё</button></>:state==='idle'?<><button className="button primary full big" onClick={start}><Mic size={21}/> Записать голосом</button><label className="message-label">Или напиши<textarea rows={4} placeholder="Завтра утром забрать посылку. К пятнице отправить макет…" value={text} onChange={e=>setText(e.target.value)} maxLength={onConfigure?6000:20000}/></label>{image&&<div className="image-preview"><img src={image} alt="Изображение для разбора"/><button className="icon-button" aria-label="Убрать изображение" onClick={()=>{setImage(null);imageFile.current=null;}}><X size={17}/></button></div>}<div className="section-line">{!onConfigure&&<label className="text-action upload-label"><ImagePlus size={18}/> Скриншот<input hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{if(e.target.files?.[0])void loadImage(e.target.files[0]);}}/></label>}<button className="button primary" disabled={!enabled||(!text.trim()&&!image)} onClick={()=>parse(null)}>Разобрать <ArrowRight size={17}/></button></div></>:null}
  {saved.length>0&&state==='idle'&&<section className="saved-recordings"><h3>Сохранённые записи · {saved.length}</h3>{saved.map(r=><div className="section-line" key={r.id}><span>{new Date(r.at).toLocaleString('ru-RU',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span><div className="button-row"><button className="icon-button" aria-label="Скачать запись" onClick={()=>download(r)}><Download size={18}/></button><button className="icon-button" aria-label="Разобрать запись" disabled={!enabled} onClick={()=>{setClip(r);void parse(r);}}><RotateCcw size={18}/></button><button className="icon-button" aria-label="Удалить запись" onClick={async()=>{await deleteRecording(r.id);setSaved(await recordings(owner));}}><X size={18}/></button></div></div>)}</section>}
