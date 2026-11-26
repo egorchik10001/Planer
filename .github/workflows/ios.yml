@@ -34,7 +34,8 @@ jobs:
           key: ${{ steps.native.outputs.cache-primary-key }}
       - name: Build the iPhone app
         run: |
-          xcodebuild -project ios/Planner.xcodeproj -scheme Planner -configuration Release -sdk iphoneos             -destination 'generic/platform=iOS' -derivedDataPath ios/generated/device CODE_SIGNING_ALLOWED=NO -quiet build
+          xcodebuild -project ios/Planner.xcodeproj -scheme Planner -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath ios/generated/device CODE_SIGNING_ALLOWED=NO -quiet build
           mkdir -p ios/generated/package/Payload
           ditto ios/generated/device/Build/Products/Release-iphoneos/Planner.app ios/generated/package/Payload/Planner.app
           test -f ios/generated/package/Payload/Planner.app/web/index.html
@@ -42,13 +43,20 @@ jobs:
           cd ios/generated
           shasum -a 256 Planner-0.1.0-ios-altstore.ipa > SHA256SUMS.txt
       - name: Check local data and settings on an iPhone simulator
+        timeout-minutes: 15
         run: |
           SIMULATOR_ID=$(xcrun simctl list devices booted available --json | jq -r '[.devices[][] | select(.name|startswith("iPhone")) | .udid][0] // empty')
           if [[ -z "$SIMULATOR_ID" ]]; then
             SIMULATOR_ID=$(xcrun simctl list devices available --json | jq -r '[.devices[][] | select(.name|startswith("iPhone")) | .udid][-1] // empty')
           fi
           test -n "$SIMULATOR_ID"
-          xcodebuild -project ios/Planner.xcodeproj -scheme Planner -configuration Debug             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -derivedDataPath ios/generated/simulator             -parallel-testing-enabled NO -resultBundlePath ios/generated/PlannerUITests.xcresult -quiet test
+          result=ios/generated/PlannerUITests.xcresult
+          if ! xcodebuild -project ios/Planner.xcodeproj -scheme Planner -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -derivedDataPath ios/generated/simulator \
+            -parallel-testing-enabled NO -resultBundlePath "$result" -quiet test; then
+            if [[ -d "$result" ]]; then xcrun xcresulttool get test-results summary --path "$result"; fi
+            exit 1
+          fi
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

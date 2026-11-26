@@ -6,9 +6,13 @@ final class BundledPages: NSObject, WKURLSchemeHandler {
     static let host = "app"
 
     private let root: URL
+    private let rootPrefix: String
 
     init(root: URL) {
-        self.root = root.standardizedFileURL
+        let directory = root.standardizedFileURL
+        self.root = directory
+        let path = directory.path(percentEncoded: false)
+        rootPrefix = path.hasSuffix("/") ? path : path + "/"
     }
 
     static func isLocal(_ url: URL?) -> Bool {
@@ -22,7 +26,7 @@ final class BundledPages: NSObject, WKURLSchemeHandler {
         }
         let path = url.path(percentEncoded: false)
         let file = root.appending(path: path == "/" ? "index.html" : String(path.dropFirst())).standardizedFileURL
-        guard file.path(percentEncoded: false).hasPrefix(root.path(percentEncoded: false) + "/"),
+        guard file.path(percentEncoded: false).hasPrefix(rootPrefix),
               let data = try? Data(contentsOf: file, options: .mappedIfSafe),
               let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
                 headerFields: ["Content-Type": mime(file.pathExtension), "Content-Length": String(data.count)]) else {

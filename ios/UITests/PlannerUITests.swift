@@ -1,6 +1,11 @@
 import XCTest
 
 final class PlannerUITests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        continueAfterFailure = false
+    }
+
     @MainActor
     func testTasksPersistAfterRelaunch() {
         let app = XCUIApplication()
@@ -34,7 +39,7 @@ final class PlannerUITests: XCTestCase {
     func testSyncSettingsAreReachable() {
         let app = XCUIApplication()
         app.launch()
-        let space = app.buttons.containing(.staticText, identifier: "На iPhone").firstMatch
+        let space = app.buttons["На iPhone"].firstMatch
         XCTAssertTrue(space.waitForExistence(timeout: 25), app.debugDescription)
         space.tap()
         XCTAssertTrue(app.staticTexts["Синхронизация"].firstMatch.waitForExistence(timeout: 10))
