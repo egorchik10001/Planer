@@ -13,22 +13,26 @@ final class PlannerUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Сегодня"].firstMatch.waitForExistence(timeout: 30), app.debugDescription)
 
         let title = "Check iPhone " + String(UUID().uuidString.prefix(8))
-        let add = app.buttons["Добавить дело"].firstMatch
+        let add = app.buttons["Добавить текстом"].firstMatch
         XCTAssertTrue(add.waitForExistence(timeout: 10))
+        XCTAssertTrue(add.isHittable)
         add.tap()
-        let input = app.textViews["Название дела"].firstMatch
+        let input = app.textViews.matching(NSPredicate(
+            format: "label == %@ OR placeholderValue == %@", "Название дела", "Что нужно сделать?"
+        )).firstMatch
         XCTAssertTrue(input.waitForExistence(timeout: 10), app.debugDescription)
         input.tap()
         input.typeText(title)
         let save = app.buttons["Сохранить"].firstMatch
-        if !save.isHittable { app.swipeUp() }
+        XCTAssertTrue(save.isHittable, app.debugDescription)
         save.tap()
-        XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        let card = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertTrue(app.staticTexts["Сохранено на iPhone"].firstMatch.waitForExistence(timeout: 10))
         app.terminate()
 
         app.launch()
-        XCTAssertTrue(app.staticTexts[title].firstMatch.waitForExistence(timeout: 20), app.debugDescription)
+        XCTAssertTrue(card.waitForExistence(timeout: 20), app.debugDescription)
         let week = app.buttons["Неделя"].firstMatch
         XCTAssertTrue(week.exists)
         week.tap()

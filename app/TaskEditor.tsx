@@ -9,6 +9,7 @@ type Props={currentUserId:string;spaceId:string|null;members:{id:string;name:str
 export default function TaskEditor({currentUserId,spaceId,members,task,version,projects,prefs,onClose,onSave,onDelete,onRefresh}:Props){
   const [draft,setDraft]=useState<Task>(()=>structuredClone(task)),[error,setError]=useState(''),[sub,setSub]=useState(''),[history,setHistory]=useState<any[]|null>(null),[uploading,setUploading]=useState(false);
   const dialog=useRef<HTMLDialogElement>(null);
+  const ios=typeof window!=='undefined'&&!!window.plannerIOS;
   useEffect(()=>{dialog.current?.showModal();return()=>dialog.current?.close();},[]);
   function update(patch:Partial<Task>){setDraft(x=>({...x,...patch}));}
   function save(e:React.FormEvent){e.preventDefault();setError('');const parsed=taskSchema.safeParse(draft);if(!parsed.success){setError('Проверьте название, даты и время. Длительность — от 1 до 1440 минут.');return;}try{onSave(parsed.data,task,version);}catch(e){setError(e instanceof Error?e.message:'Не удалось сохранить.');}}
@@ -17,8 +18,11 @@ export default function TaskEditor({currentUserId,spaceId,members,task,version,p
   async function attach(f:File){setUploading(true);try{const body=new FormData();body.append('file',f);const r=await fetch(apiPath('/api/attachments',spaceId,currentUserId),{method:'POST',body});const a:any=await r.json();if(!r.ok)throw new Error(a.error);update({attachments:[...draft.attachments,a as Attachment]});}catch(e){setError(e instanceof Error?e.message:'Не удалось прикрепить файл.');}finally{setUploading(false);}}
   const localTime=(iso:string|null)=>iso?new Date(new Date(iso).getTime()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):'';
   return <dialog ref={dialog} className="task-dialog" onCancel={e=>{e.preventDefault();onClose();}}>
-    <div className="editor-head"><span>{version===0?'Новое дело':'Подробности дела'}</span><button className="icon-button" aria-label="Закрыть" onClick={onClose}><X size={22}/></button></div>
-    <form onSubmit={save} className="task-form">
+    <div className="editor-head"><span>{version===0?'Новое дело':'Подробности дела'}</span><div className="editor-heading-actions">
+      {ios&&<button className="button primary" type="submit" form="task-editor-form" disabled={uploading}>Сохранить</button>}
+      <button className="icon-button" aria-label="Закрыть" onClick={onClose}><X size={22}/></button>
+    </div></div>
+    <form id="task-editor-form" onSubmit={save} className="task-form">
       <label className="sr-only" htmlFor="task-title">Название дела</label><textarea id="task-title" className="title-input" value={draft.title} onChange={e=>update({title:e.target.value})} placeholder="Что нужно сделать?" rows={2} required maxLength={300} autoFocus/>
       <div className="form-grid"><label>Проект<select value={draft.projectId||''} onChange={e=>update({projectId:e.target.value||null})}><option value="">Входящие</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>Состояние<select value={draft.status} onChange={e=>update({status:e.target.value as Task['status'],completedAt:e.target.value==='done'?new Date().toISOString():null})}>{Object.entries(STATUS).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
       <label>День выполнения<input type="date" value={draft.date||''} onChange={e=>update({date:e.target.value||null})}/></label><label>Время<input type="time" value={draft.time||''} onChange={e=>update({time:e.target.value||null})}/></label><label>Крайний срок<input type="date" value={draft.dueDate||''} onChange={e=>update({dueDate:e.target.value||null})}/></label><label>Длительность, мин<input type="number" min="1" max="1440" placeholder="Необязательно" value={draft.duration??''} onChange={e=>update({duration:e.target.value?Number(e.target.value):null})}/></label></div>
@@ -34,7 +38,7 @@ export default function TaskEditor({currentUserId,spaceId,members,task,version,p
       }}>{a.name}</a><button type="button" className="icon-button" aria-label="Убрать вложение" onClick={()=>update({attachments:draft.attachments.filter(x=>x.key!==a.key)})}><X size={15}/></button></div>)}{draft.sourceText&&<details><summary>Исходное сообщение</summary><p className="source-text">{draft.sourceText}</p></details>}</section>
       {version>0&&<section className="form-section"><button className="text-action" type="button" onClick={loadHistory}><History size={17}/> История изменений</button>{history&&<div className="history-list">{history.length?history.map(h=><div key={h.id}><p>{new Date(h.at).toLocaleString('ru-RU',{timeZone:prefs.timezone})}</p><span>{h.source==='voice'?'Голосом':h.source==='restore'?'Восстановление':h.source==='telegram'?'Из Telegram':'Вручную'}</span>{h.before&&<button type="button" className="text-action" onClick={()=>restore(h.id)}><RotateCcw size={14}/> Вернуть изменение</button>}</div>):<p className="hint">История появится после сохранения дела.</p>}</div>}</section>}
       {error&&<p role="alert" className="error-message">{error}</p>}
-      <div className="editor-footer">{task.title?<button type="button" className="icon-button danger" aria-label="Переместить в корзину" onClick={()=>onDelete(task)}><Trash2 size={20}/></button>:<span/>}<button className="button secondary" type="button" onClick={onClose}>Отмена</button><button className="button primary" type="submit" disabled={uploading}>Сохранить</button></div>
+      <div className="editor-footer">{task.title?<button type="button" className="icon-button danger" aria-label="Переместить в корзину" onClick={()=>onDelete(task)}><Trash2 size={20}/></button>:<span/>}<button className="button secondary" type="button" onClick={onClose}>Отмена</button>{!ios&&<button className="button primary" type="submit" disabled={uploading}>Сохранить</button>}</div>
     </form>
   </dialog>;
 }
